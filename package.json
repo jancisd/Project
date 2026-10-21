@@ -1,0 +1,35 @@
+{
+  "name": "airstethics",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@fontsource/cormorant-garamond": "5.3.0",
+    "@fontsource/dm-sans": "5.3.0",
+    "lucide-react": "1.60.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "^24.10.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "prettier": "3.6.2",
+    "typescript": "~5.9.3",
+    "vite": "8.3.4"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

@@ -1,0 +1,13 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# Serve existing assets normally, and let the app handle other paths.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = false

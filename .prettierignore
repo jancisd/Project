@@ -1,0 +1,7 @@
+node_modules
+dist
+test-results
+playwright-report
+package-lock.json
+public/images/ASSET-CREDITS.md
+public/images/UPSTREAM-LICENSE.txt

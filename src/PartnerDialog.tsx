@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { ArrowRight, Check, MapPin, Sparkles, X } from 'lucide-react';
 import { categories } from './data';
 import type { Category, Listing } from './data';
+import { getListingCoordinates } from './geography';
 
 const pictures: Record<string, string> = {
   Hair: '/images/hair.webp',
@@ -61,11 +62,13 @@ export default function PartnerDialog({
     }
     const id = `local-${crypto.randomUUID()}`;
     const image = pictures[category];
+    const coordinates = getListingCoordinates({ id, city, neighborhood });
     onCreate({
       id,
       name: name.trim(),
       category,
       city,
+      ...(coordinates ? { coordinates } : {}),
       neighborhood: neighborhood.trim(),
       description: description.trim(),
       image,
@@ -127,6 +130,9 @@ export default function PartnerDialog({
           business or contact any clients.
         </p>
       </div>
+      <p className="partner-image-note partner-location-note">
+        Your map pin will show the approximate neighbourhood or city centre.
+      </p>
       <form className="partner-form" onSubmit={submit}>
         <label>
           Your space’s name

@@ -5,3 +5,4 @@ playwright-report
 package-lock.json
 public/images/ASSET-CREDITS.md
 public/images/UPSTREAM-LICENSE.txt
+public/maps/*.geojson

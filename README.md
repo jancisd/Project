@@ -34,6 +34,8 @@ No environment variables or API keys are required for this prototype. Later push
 ## What works
 
 - Search by studio, service, city, and neighbourhood; browse six beauty categories.
+- Explore a worldwide interactive map, starting in Alberta, alongside the listings. Price pins and clusters open studio previews; **On map** locates a listing, and **View & book** opens its booking form.
+- Pan or zoom, then use **Search this area** to filter results geographically. **Clear map area** restores the full search. Switch between the list and map with **Show map / Show list**; mobile starts with the list.
 - Filter by starting price or rating, and sort by price or rating.
 - Save and remove favourites.
 - View studio details, services, pricing, and sample reviews.
@@ -63,11 +65,13 @@ npx playwright install chromium
 - `src/BookingDialog.tsx`: service selection, scheduling, and booking confirmation
 - `src/PartnerDialog.tsx`: local demo listing creation
 - `src/data.ts`: fictional Alberta providers and services
+- `src/DiscoverMap.tsx`, `src/map.css`, and `src/discovery.css`: interactive map and responsive discovery layout
+- `src/geography.ts`: approximate demo neighbourhood coordinates and supported partner location fallbacks
 - `src/types.ts`: shared booking and navigation types
 - `src/storage.ts`: safe loading and validation of browser data
 - `src/styles.css` and `src/booking.css`: responsive design
 - `tests/marketplace.spec.ts`: browser workflow tests
 
-Built with React, TypeScript, Vite, and Lucide icons. Photography and fonts are served locally; the app needs no API keys or external runtime services. Photo credits and upstream licensing are in [public/images/ASSET-CREDITS.md](public/images/ASSET-CREDITS.md).
+Built with React, TypeScript, Vite, Leaflet, and Lucide icons. Photography, fonts, and a fallback world map are served locally; the app needs no API keys. Detailed street tiles load from OpenStreetMap when available; if that server is unavailable, the bundled world countries, Canadian provinces, and regional highways keep the map usable. Map positions are approximate demo locations, not verified business addresses. Existing saved listings continue to work using neighbourhood or city-centre locations. Photo credits are in [public/images/ASSET-CREDITS.md](public/images/ASSET-CREDITS.md); public-domain map data credits are in [public/maps/README.md](public/maps/README.md).
 
 The next production steps are user and provider accounts, a database/API, verified businesses, a shared availability system, and payment and notification integrations.

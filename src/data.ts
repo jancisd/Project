@@ -21,6 +21,7 @@ export type Listing = {
   category: Exclude<Category, 'All'>;
   neighborhood: string;
   city: string;
+  coordinates?: { lat: number; lng: number };
   description: string;
   image: string;
   images: string[];

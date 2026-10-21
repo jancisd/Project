@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import {
   ArrowDownUp,
@@ -13,6 +13,8 @@ import {
   Grid2X2,
   Hand,
   Heart,
+  List,
+  Map as MapIcon,
   MapPin,
   Menu,
   Paintbrush,
@@ -29,6 +31,7 @@ import type { Category, Listing } from './data';
 import type { Booking, View } from './types';
 import BookingDialog from './BookingDialog';
 import PartnerDialog from './PartnerDialog';
+import { getListingCoordinates } from './geography';
 import {
   readStored,
   isStringArray,
@@ -37,6 +40,8 @@ import {
 } from './storage';
 
 const cities = ['Edmonton', 'Calgary', 'Canmore'];
+const DiscoverMap = lazy(() => import('./DiscoverMap'));
+type MapArea = { north: number; south: number; east: number; west: number };
 const categoryIcons: Record<Category, typeof Scissors> = {
   All: Grid2X2,
   Hair: Scissors,
@@ -139,18 +144,32 @@ function ListingCard({
   saved,
   onSave,
   onOpen,
+  onLocate,
+  onHighlight,
+  highlighted = false,
 }: {
   listing: Listing;
   saved: boolean;
   onSave: () => void;
   onOpen: () => void;
+  onLocate?: () => void;
+  onHighlight?: (active: boolean) => void;
+  highlighted?: boolean;
 }) {
   const price = Math.min(...listing.services.map((s) => s.price));
   return (
     <article
-      className="listing-card"
+      className={`listing-card${highlighted ? ' listing-card-highlighted' : ''}`}
       data-testid="listing-card"
+      data-listing-id={listing.id}
       data-starting-price={price}
+      onMouseEnter={() => onHighlight?.(true)}
+      onMouseLeave={() => onHighlight?.(false)}
+      onFocus={() => onHighlight?.(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          onHighlight?.(false);
+      }}
     >
       <div className="listing-image-wrap">
         <button
@@ -193,7 +212,19 @@ function ListingCard({
       <h3>
         <button onClick={onOpen}>{listing.name}</button>
       </h3>
-      <p className="listing-neighborhood">{listing.neighborhood}</p>
+      <div className="listing-address">
+        <p className="listing-neighborhood">{listing.neighborhood}</p>
+        {onLocate && (
+          <button
+            className="listing-locate"
+            onClick={onLocate}
+            aria-label={`Locate ${listing.name} on map`}
+          >
+            <MapPin size={12} />
+            <span>On map</span>
+          </button>
+        )}
+      </div>
       <div className="listing-bottom">
         <p>
           From <strong>${price}</strong> <span>CAD / service</span>
@@ -254,6 +285,12 @@ function App() {
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [info, setInfo] = useState<'about' | 'privacy' | null>(null);
   const [toast, setToast] = useState('');
+  const [mapVisible, setMapVisible] = useState(
+    () => window.matchMedia('(min-width: 901px)').matches,
+  );
+  const [mapSelectedId, setMapSelectedId] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [mapArea, setMapArea] = useState<MapArea | null>(null);
   const [saved, setSaved] = useState<string[]>(() =>
     readStored('airstethics:saved', [], isStringArray),
   );
@@ -264,6 +301,7 @@ function App() {
     readStored('airstethics:listings', [], isListingArray),
   );
   const resultsRef = useRef<HTMLElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (toast) {
@@ -290,7 +328,7 @@ function App() {
     () => [...localListings, ...demoListings],
     [localListings],
   );
-  const visibleListings = useMemo(() => {
+  const matchingListings = useMemo(() => {
     let items = allListings.filter((listing) => {
       if (view === 'saved') return saved.includes(listing.id);
       const text = [
@@ -328,9 +366,28 @@ function App() {
       items = [...items].sort((a, b) => b.rating - a.rating);
     return items;
   }, [allListings, category, search, maxPrice, highlyRated, sort, view, saved]);
+  const visibleListings = useMemo(() => {
+    if (view !== 'explore' || !mapArea) return matchingListings;
+    const span = mapArea.east - mapArea.west;
+    return matchingListings.filter((listing) => {
+      const coordinates = getListingCoordinates(listing);
+      if (
+        !coordinates ||
+        coordinates.lat < mapArea.south ||
+        coordinates.lat > mapArea.north
+      )
+        return false;
+      const delta = (((coordinates.lng - mapArea.west) % 360) + 360) % 360;
+      return span >= 360 || delta <= ((span % 360) + 360) % 360;
+    });
+  }, [matchingListings, mapArea, view]);
   const activeFilters = Number(maxPrice < 300) + Number(highlyRated);
   const hasSearch =
-    category !== 'All' || search.location || search.query || activeFilters;
+    category !== 'All' ||
+    search.location ||
+    search.query ||
+    activeFilters ||
+    mapArea;
   const confirmedCount = bookings.filter(
     (b) => b.status === 'confirmed',
   ).length;
@@ -348,6 +405,9 @@ function App() {
     setMaxPrice(300);
     setHighlyRated(false);
     setSort('recommended');
+    setMapArea(null);
+    setMapSelectedId(null);
+    setHighlightedId(null);
   };
   const toggleSave = (id: string) => {
     const wasSaved = saved.includes(id);
@@ -363,6 +423,8 @@ function App() {
   const submitSearch = (e: FormEvent) => {
     e.preventDefault();
     setSearch({ location, query: query.trim() });
+    setMapArea(null);
+    setMapSelectedId(null);
     setView('explore');
     setTimeout(
       () =>
@@ -372,6 +434,21 @@ function App() {
         }),
       30,
     );
+  };
+
+  const openMap = (listing?: Listing) => {
+    setMapVisible(true);
+    if (listing) setMapSelectedId(listing.id);
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      setTimeout(
+        () =>
+          mapRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          }),
+        50,
+      );
+    }
   };
 
   return (
@@ -447,119 +524,81 @@ function App() {
       <main id="main-content">
         {view === 'explore' && (
           <>
-            <section className="hero page-width" aria-labelledby="hero-title">
-              <div className="hero-copy">
-                <span className="eyebrow">
-                  <span className="status-dot" /> ROOTED IN ALBERTA. MADE FOR
-                  YOU.
+            <div className="discovery-top page-width">
+              <section
+                className="discover-intro"
+                aria-labelledby="discover-title"
+              >
+                <span className="eyebrow muted-eyebrow">
+                  A LITTLE LOCAL. A WORLD OF BEAUTY.
                 </span>
-                <h1 id="hero-title">
-                  A little time.
-                  <br />A little <em>you.</em>
+                <h1 id="discover-title">
+                  Find your kind of <em>beauty.</em>
                 </h1>
-                <p>
-                  Discover beautiful spaces and the people behind
-                  <br className="desktop-break" /> your next feel-good moment.
-                </p>
-                <a className="hero-link" href="#experiences">
-                  Find your kind of beauty <ArrowRight size={18} />
-                </a>
-                <div className="hero-note">
-                  <span className="hero-note-line" />
-                  <span>Good hair. Fresh nails. A brighter day.</span>
-                </div>
-              </div>
-              <div className="hero-visual">
-                <img
-                  className="hero-image"
-                  src="/images/hero.webp"
-                  alt="An editorial beauty portrait in warm tones"
-                  fetchPriority="high"
-                />
-                <div className="hero-image-shade" />
-                <span className="hero-image-label">
-                  <MapPin size={13} /> A little closer to your happy place.
-                </span>
-                <div className="hero-floating">
-                  <span className="floating-spark">
-                    <BloomIcon />
-                  </span>
+                <p>Your next feel-good moment is closer than you think.</p>
+              </section>
+              <form
+                className="search-bar discover-search"
+                role="search"
+                onSubmit={submitSearch}
+              >
+                <div className="search-field location-field">
+                  <MapPin size={21} />
                   <div>
-                    Self-care looks
-                    <br />
-                    <em>good on you.</em>
-                  </div>
-                  <span className="floating-caption">
-                    MAKE ROOM FOR YOURSELF
-                  </span>
-                </div>
-              </div>
-            </section>
-            <form className="search-bar" role="search" onSubmit={submitSearch}>
-              <div className="search-field location-field">
-                <MapPin size={21} />
-                <div>
-                  <label htmlFor="location">WHERE</label>
-                  <div className="select-wrap">
-                    <select
-                      id="location"
-                      aria-label="Location"
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                    >
-                      <option value="">Anywhere in Alberta</option>
-                      {cities.map((city) => (
-                        <option key={city}>{city}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={14} />
+                    <label htmlFor="location">WHERE</label>
+                    <div className="select-wrap">
+                      <select
+                        id="location"
+                        aria-label="Location"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                      >
+                        <option value="">Anywhere in Alberta</option>
+                        {cities.map((city) => (
+                          <option key={city}>{city}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} />
+                    </div>
                   </div>
                 </div>
-              </div>
-              <span className="search-divider" />
-              <div className="search-field query-field">
-                <Sparkles size={21} />
-                <div>
-                  <label htmlFor="beauty-search">
-                    YOUR NEXT FEEL-GOOD MOMENT
-                  </label>
-                  <input
-                    id="beauty-search"
-                    aria-label="Search beauty experiences"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="A haircut, a fresh set, a little glow…"
-                    type="search"
-                  />
+                <span className="search-divider" />
+                <div className="search-field query-field">
+                  <Sparkles size={21} />
+                  <div>
+                    <label htmlFor="beauty-search">
+                      YOUR NEXT FEEL-GOOD MOMENT
+                    </label>
+                    <input
+                      id="beauty-search"
+                      aria-label="Search beauty experiences"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="A haircut, a fresh set, a little glow…"
+                      type="search"
+                    />
+                  </div>
                 </div>
-              </div>
-              <button className="search-button" type="submit">
-                <Search size={19} />
-                <span>Search</span>
-              </button>
-            </form>
-            <div className="trust-strip page-width">
-              <p>
-                A good place to find <em>your people.</em>
-              </p>
-              <div>
-                <span>
-                  <MapPin size={15} /> Local, independent talent
-                </span>
-                <span>
-                  <ShieldCheck size={16} /> Clear, upfront pricing
-                </span>
-                <span>
-                  <Heart size={15} /> Beauty, on your terms
-                </span>
-              </div>
+                <button className="search-button" type="submit">
+                  <Search size={19} />
+                  <span>Search</span>
+                </button>
+              </form>
+            </div>
+            <div className="discovery-note page-width">
+              <span>
+                <MapPin size={13} /> Starting in Alberta. Explore from anywhere.
+              </span>
+              <span>
+                <ShieldCheck size={14} /> Independent talent. Clear pricing.
+              </span>
             </div>
           </>
         )}
 
         {view === 'explore' && (
           <section
-            className="discovery-section page-width"
+            className={`discovery-section page-width ${mapVisible ? 'is-map-visible' : 'is-list-only'}`}
             id="experiences"
             aria-label="Discover beauty experiences"
             ref={resultsRef}
@@ -601,7 +640,7 @@ function App() {
                 )}
               </button>
             </div>
-            <div className="results-heading">
+            <div className="results-heading discover-results-heading">
               <div>
                 <span className="eyebrow muted-eyebrow">
                   FIND A PLACE THAT FEELS LIKE YOU
@@ -616,26 +655,42 @@ function App() {
                   {visibleListings.length === 1
                     ? 'lovely place'
                     : 'lovely places'}{' '}
-                  {search.location ? `in ${search.location}` : 'across Alberta'}{' '}
+                  {mapArea
+                    ? 'in this map area'
+                    : search.location
+                      ? `in ${search.location}`
+                      : 'across Alberta'}{' '}
                   <span className="results-divider">·</span>{' '}
                   <span>Sample listings, real possibilities</span>
                 </p>
               </div>
-              <label className="sort-control">
-                <ArrowDownUp size={15} />
-                <span className="sr-only">Sort experiences</span>
-                <select
-                  aria-label="Sort experiences"
-                  value={sort}
-                  onChange={(e) => setSort(e.target.value)}
+              <div className="discovery-view-controls">
+                <label className="sort-control">
+                  <ArrowDownUp size={15} />
+                  <span className="sr-only">Sort experiences</span>
+                  <select
+                    aria-label="Sort experiences"
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value)}
+                  >
+                    <option value="recommended">Recommended</option>
+                    <option value="low">Price: low to high</option>
+                    <option value="high">Price: high to low</option>
+                    <option value="rating">Highest rated</option>
+                  </select>
+                  <ChevronDown size={13} />
+                </label>
+                <button
+                  className="view-toggle"
+                  onClick={() =>
+                    mapVisible ? setMapVisible(false) : openMap()
+                  }
+                  aria-pressed={mapVisible}
                 >
-                  <option value="recommended">Recommended</option>
-                  <option value="low">Price: low to high</option>
-                  <option value="high">Price: high to low</option>
-                  <option value="rating">Highest rated</option>
-                </select>
-                <ChevronDown size={13} />
-              </label>
+                  {mapVisible ? <List size={16} /> : <MapIcon size={16} />}
+                  {mapVisible ? 'Show list' : 'Show map'}
+                </button>
+              </div>
             </div>
             {hasSearch ? (
               <div className="active-search">
@@ -644,38 +699,87 @@ function App() {
                   {search.query ? ` · “${search.query}”` : ''}
                   {maxPrice < 300 ? ` · Up to $${maxPrice}` : ''}
                   {highlyRated ? ' · 4.9+ stars' : ''}
+                  {mapArea ? ' · Current map area' : ''}
                 </span>
                 <button onClick={clearFilters}>
                   Clear filters <X size={13} />
                 </button>
               </div>
             ) : null}
-            {visibleListings.length ? (
-              <div className="listing-grid">
-                {visibleListings.map((listing) => (
-                  <ListingCard
-                    key={listing.id}
-                    listing={listing}
-                    saved={saved.includes(listing.id)}
-                    onSave={() => toggleSave(listing.id)}
-                    onOpen={() => setSelected(listing)}
+            <div className="discovery-layout">
+              <div className="discovery-list">
+                {visibleListings.length ? (
+                  <div className="listing-grid discovery-listing-grid">
+                    {visibleListings.map((listing) => (
+                      <ListingCard
+                        key={listing.id}
+                        listing={listing}
+                        saved={saved.includes(listing.id)}
+                        onSave={() => toggleSave(listing.id)}
+                        onOpen={() => setSelected(listing)}
+                        onLocate={
+                          getListingCoordinates(listing)
+                            ? () => openMap(listing)
+                            : undefined
+                        }
+                        highlighted={
+                          highlightedId === listing.id ||
+                          mapSelectedId === listing.id
+                        }
+                        onHighlight={(active) =>
+                          setHighlightedId(active ? listing.id : null)
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={<Search size={29} />}
+                    title="Your perfect match is still out there."
+                    description="Try another service, location, or price range. A little reset can do wonders."
+                    action="Clear filters"
+                    onAction={clearFilters}
                   />
-                ))}
+                )}
+                <p className="end-of-list">
+                  <span />A little local love goes a long way.
+                  <Flower2 size={18} />
+                  <span />
+                </p>
               </div>
-            ) : (
-              <EmptyState
-                icon={<Search size={29} />}
-                title="Your perfect match is still out there."
-                description="Try another service, location, or price range. A little reset can do wonders."
-                action="Clear filters"
-                onAction={clearFilters}
-              />
-            )}
-            <p className="end-of-list">
-              <span />A little local love goes a long way.
-              <Flower2 size={18} />
-              <span />
-            </p>
+              {mapVisible && (
+                <div
+                  className="discovery-map-shell"
+                  data-testid="discovery-map-shell"
+                  ref={mapRef}
+                >
+                  <Suspense
+                    fallback={
+                      <div className="map-loading" role="status">
+                        <MapIcon size={27} />
+                        <p>Finding your little corner of the world…</p>
+                      </div>
+                    }
+                  >
+                    <DiscoverMap
+                      listings={matchingListings}
+                      selectedId={mapSelectedId}
+                      highlightedId={highlightedId}
+                      onSelect={setMapSelectedId}
+                      onBook={setSelected}
+                      onSave={toggleSave}
+                      saved={saved}
+                      onSearchArea={(bounds) => {
+                        setMapArea(bounds);
+                        setMapSelectedId(null);
+                      }}
+                      onClearArea={() => setMapArea(null)}
+                      areaActive={Boolean(mapArea)}
+                    />
+                  </Suspense>
+                </div>
+              )}
+            </div>
           </section>
         )}
 

@@ -89,6 +89,10 @@ function isListing(value: unknown): value is Listing {
     categories.some((category) => category === value.category) &&
     isText(value.neighborhood, 200) &&
     isText(value.city, 200) &&
+    (value.coordinates === undefined ||
+      (isRecord(value.coordinates) &&
+        inRange(value.coordinates.lat, -90, 90) &&
+        inRange(value.coordinates.lng, -180, 180))) &&
     isText(value.description, 10000) &&
     isText(value.image, 2048) &&
     isStringArray(value.images) &&

@@ -43,6 +43,7 @@ No environment variables or API keys are required for this prototype. Later push
 - Book a service with a date, Alberta-local time, and sample contact details. Past times, appointments beyond 90 days, overlapping bookings, and appointments extending past closing are blocked.
 - View, persist, and cancel demo appointments. Cancelling releases the time slot.
 - Create a sample partner listing and book its service.
+- Match a partner listing’s neighbourhood within its selected city and preview the pin before creating it. Shared names across cities use the selected city; ambiguous names require a choice. Unmatched neighbourhoods require a manually placed, confirmed pin, rather than a city-centre guess. Changing the city, neighbourhood, or manual coordinates clears the previous confirmation.
 - Use the responsive desktop or mobile interface and keyboard-accessible dialogs.
 
 Favourites, listings, and bookings persist in this browser's local storage. Please use sample contact details. **Privacy & demo info → Clear my demo data** clears all saved demo information. There is no server-side persistence, authentication, payment processing, provider verification, email delivery, or shared availability across devices.
@@ -68,11 +69,15 @@ npx playwright install chromium
 - `src/data.ts`: fictional Alberta providers and services
 - `src/DiscoverMap.tsx`, `src/map.css`, and `src/discovery.css`: interactive map and responsive discovery layout
 - `src/geography.ts`: approximate demo neighbourhood coordinates and supported partner location fallbacks
+- `src/neighbourhoods.ts` and `src/neighbourhood-data.ts`: city-scoped neighbourhood matching and the local neighbourhood catalogue
+- `src/LocationPicker.tsx`: location preview and confirmed manual pin placement
 - `src/types.ts`: shared booking and navigation types
 - `src/storage.ts`: safe loading and validation of browser data
 - `src/styles.css` and `src/booking.css`: responsive design
 - `tests/marketplace.spec.ts`: browser workflow tests
 
 Built with React, TypeScript, Vite, Leaflet, and Lucide icons. Photography, fonts, and a fallback world map are served locally; the app needs no API keys. Detailed street tiles load from OpenStreetMap when available; if that server is unavailable, the bundled world countries, Canadian provinces, and regional highways keep the map usable. Map positions are approximate demo locations, not verified business addresses. Existing saved listings continue to work using neighbourhood or city-centre locations. Photo credits are in [public/images/ASSET-CREDITS.md](public/images/ASSET-CREDITS.md); public-domain map data credits are in [public/maps/README.md](public/maps/README.md).
+
+New partner listings always save explicit coordinates from a selected neighbourhood or a manually confirmed pin. Neighbourhood matching uses 629 local records: municipal-source Edmonton and Calgary geometry from a historical 2013 snapshot, plus the supported Canmore downtown area and documented aliases. The catalogue is not a current, exhaustive list; newer or unlisted areas can be located manually. Matched neighbourhood pins use points inside the source polygon, rather than a generic city centre. Older saved listings may retain their earlier approximate locations. No neighbourhood or manual-pin lookup sends entered names to a geocoding service. Source, coverage, and licence notes are in [public/locations/README.md](public/locations/README.md).
 
 The next production steps are user and provider accounts, a database/API, verified businesses, a shared availability system, and payment and notification integrations.

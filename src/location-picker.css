@@ -1,0 +1,241 @@
+.location-picker {
+  border: 1px solid #dce3d1;
+  border-radius: 10px;
+  padding: 13px;
+  background: #f8faf3;
+  color: #233a31;
+}
+
+.location-picker-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.location-picker-instructions {
+  font-size: 10px;
+  color: #7e8b72;
+  line-height: 1.7;
+  margin: 8px 0 11px;
+}
+
+.location-picker-map-wrap {
+  position: relative;
+  height: 250px;
+  border-radius: 8px;
+  border: 1px solid #d9e0ce;
+  isolation: isolate;
+  overflow: hidden;
+  background: #e9eedf;
+}
+
+.location-picker .location-picker-map {
+  width: 100%;
+  height: 100%;
+  background: #e9eedf;
+  font-family: inherit;
+  z-index: 0;
+}
+
+.location-picker .leaflet-tile-pane {
+  filter: saturate(0.6) contrast(0.96);
+}
+
+.location-picker .location-picker-pin {
+  background: transparent;
+  border: 0;
+  filter: drop-shadow(0 3px 3px #233a3130);
+}
+
+.location-picker .location-picker-pin svg {
+  display: block;
+}
+
+.location-picker .location-picker-pin:focus-visible {
+  outline: 3px solid #bc725e;
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+.location-picker-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid #d5deca;
+  border-radius: 7px;
+  background: #fffef9;
+  overflow: hidden;
+  box-shadow: 0 2px 8px #233a3110;
+}
+
+.location-picker-controls > button {
+  min-width: 32px;
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  background: #fffef9;
+  color: #58704c;
+  cursor: pointer;
+  border: 0;
+}
+
+.location-picker-controls > button:hover {
+  background: #ecf0e4;
+}
+
+.location-picker-empty-pin {
+  position: absolute;
+  top: 12px;
+  left: 10px;
+  right: 54px;
+  background: #fffdf4e8;
+  border: 1px solid #dde4d2;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 10px;
+  text-align: center;
+  color: #789066;
+  pointer-events: none;
+}
+
+.location-picker-detail-note {
+  position: absolute;
+  bottom: 25px;
+  left: 7px;
+  right: 7px;
+  font-size: 8px;
+  color: #7e8c72;
+  text-align: center;
+  background: #fffdf4db;
+  border-radius: 5px;
+  padding: 4px 6px;
+  pointer-events: none;
+}
+
+.location-picker-attribution {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  text-align: right;
+  padding: 4px 7px;
+  line-height: 1.4;
+  font-size: 7px;
+  background: #fffdf4e8;
+  color: #7d8a73;
+}
+
+.location-picker-attribution a:hover {
+  text-decoration: underline;
+}
+
+.location-picker-coordinates,
+.location-picker-status,
+.location-picker-unavailable {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #5e7750;
+  margin-top: 9px;
+}
+
+.location-picker-coordinates > span {
+  color: #9aa68c;
+  font-size: 9px;
+}
+
+.location-picker-coordinate-controls {
+  margin-top: 10px;
+}
+
+.location-picker-coordinate-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.location-picker .location-picker-coordinate-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.location-picker .location-picker-coordinate-fields input {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  padding: 9px 10px;
+  border: 1px solid #d4dfc8;
+  border-radius: 6px;
+  background: #fffef9;
+  color: #526c43;
+}
+
+.location-picker-move {
+  margin-top: 9px;
+  border: 1px solid #b4c2a5;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #617c4d;
+  background: #f0f4e9;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.location-picker-move:hover {
+  background: #e5edda;
+}
+
+.location-picker-error {
+  font-size: 10px;
+  line-height: 1.6;
+  background: #f9ece6;
+  color: #a34d40;
+  padding: 9px 10px;
+  border-radius: 6px;
+  margin: 10px 0 0;
+}
+
+@media (max-width: 600px) {
+  .location-picker {
+    padding: 10px;
+  }
+
+  .location-picker-map-wrap {
+    height: 235px;
+  }
+
+  .location-picker-heading,
+  .location-picker-instructions {
+    font-size: 9px;
+  }
+
+  .location-picker-coordinate-fields {
+    gap: 8px;
+  }
+
+  .location-picker .location-picker-coordinate-fields input {
+    padding: 8px;
+    font-size: 10px;
+  }
+
+  .location-picker-coordinates {
+    font-size: 9px;
+  }
+
+  .location-picker-coordinates > span {
+    display: block;
+    font-size: 8px;
+  }
+
+  .location-picker-detail-note {
+    font-size: 7px;
+  }
+}

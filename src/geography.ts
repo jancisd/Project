@@ -1,4 +1,5 @@
 import type { Listing } from './data';
+import { resolveNeighbourhood } from './neighbourhoods';
 
 export type Coordinates = { lat: number; lng: number };
 
@@ -74,6 +75,9 @@ export function getListingCoordinates(
   if (isValidCoordinates(listing.coordinates)) return listing.coordinates;
   if (Object.hasOwn(demoLocations, listing.id))
     return demoLocations[listing.id];
+
+  const resolved = resolveNeighbourhood(listing.neighborhood, listing.city);
+  if (resolved.status === 'matched') return resolved.matches[0].coordinates;
 
   const city = listing.city.trim().toLocaleLowerCase('en-CA');
   const neighbourhood = listing.neighborhood.trim().toLocaleLowerCase('en-CA');

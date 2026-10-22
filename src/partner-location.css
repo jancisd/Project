@@ -1,0 +1,141 @@
+.partner-location {
+  padding: 15px;
+  border: 1px solid #e0e5d8;
+  border-radius: 10px;
+  background: #f6f7ef;
+}
+
+.partner-location-help {
+  font-size: 10px;
+  line-height: 1.8;
+  color: #7a8770;
+}
+
+.partner-location-prompt {
+  margin-top: 11px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: #8c7157;
+}
+
+.partner-location-matched {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 11px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #5a764b;
+}
+
+.partner-location-matched > svg {
+  margin-top: 2px;
+}
+
+.partner-location-matched strong {
+  font-weight: 600;
+}
+
+.partner-location-options {
+  display: grid;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.partner-location-options > button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid #dce3d2;
+  border-radius: 7px;
+  background: #fffef8;
+  color: #647b53;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.partner-location-options > button:hover,
+.partner-location-options > button[aria-pressed='true'] {
+  border-color: #839b70;
+  background: #eaf0df;
+}
+
+.partner-location-options > button > span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.partner-location-options strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.partner-location-options small {
+  font-size: 9px;
+  line-height: 1.5;
+  color: #8a977b;
+}
+
+.partner-location-preview {
+  margin-top: 13px;
+}
+
+.partner-location-loading {
+  min-height: 230px;
+  display: grid;
+  place-items: center;
+  background: #e7eddf;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #859575;
+}
+
+.partner-location-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 11px;
+  padding: 6px 0;
+  font-size: 10px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: #6f855e;
+}
+
+.partner-location-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 16px;
+  margin-top: 12px;
+  border-radius: 7px;
+  color: #fffdf6;
+  background: #233a31;
+  font-size: 11px;
+}
+
+.partner-location-confirm:disabled {
+  opacity: 0.45;
+}
+
+.partner-location-manual > .partner-location-help {
+  margin-top: 11px;
+}
+
+@media (max-width: 600px) {
+  .partner-location {
+    padding: 12px;
+  }
+
+  .partner-location-options > button {
+    padding: 10px;
+  }
+}

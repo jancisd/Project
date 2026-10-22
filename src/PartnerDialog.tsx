@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ArrowRight, Check, MapPin, Sparkles, X } from 'lucide-react';
 import { categories } from './data';
 import type { Category, Listing } from './data';
-import { getListingCoordinates } from './geography';
+import type { Coordinates } from './geography';
+import { isWithinCityArea, resolveNeighbourhood } from './neighbourhoods';
+import './partner-location.css';
+
+const LocationPicker = lazy(() => import('./LocationPicker'));
 
 const pictures: Record<string, string> = {
   Hair: '/images/hair.webp',
@@ -32,6 +36,27 @@ export default function PartnerDialog({
   const [duration, setDuration] = useState('60');
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState('');
+  const neighborhoodRef = useRef<HTMLInputElement>(null);
+  const [chosenMatchId, setChosenMatchId] = useState<string | null>(null);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualPoint, setManualPoint] = useState<Coordinates | null>(null);
+  const [manualConfirmed, setManualConfirmed] = useState(false);
+  const resolution = useMemo(
+    () => resolveNeighbourhood(neighborhood, city),
+    [neighborhood, city],
+  );
+  const matchedPlace =
+    resolution.status === 'matched'
+      ? resolution.matches[0]
+      : resolution.matches.find((match) => match.id === chosenMatchId);
+
+  function resetLocation() {
+    setChosenMatchId(null);
+    setManualMode(false);
+    setManualPoint(null);
+    setManualConfirmed(false);
+    setFormError('');
+  }
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialogRef.current?.showModal();
@@ -60,16 +85,31 @@ export default function PartnerDialog({
       );
       return;
     }
+    const coordinates = manualMode
+      ? manualConfirmed && manualPoint && isWithinCityArea(manualPoint, city)
+        ? manualPoint
+        : null
+      : matchedPlace?.coordinates;
+    if (!coordinates) {
+      setFormError(
+        manualMode
+          ? `Set and confirm your pin in ${city} using “Use this pin” before creating your space.`
+          : resolution.status === 'ambiguous'
+            ? `Choose which neighbourhood in ${city} you mean, or set and confirm its location on the map.`
+            : `We couldn’t find that neighbourhood in ${city}. Check the name and city, or set and confirm its location on the map.`,
+      );
+      neighborhoodRef.current?.focus();
+      return;
+    }
     const id = `local-${crypto.randomUUID()}`;
     const image = pictures[category];
-    const coordinates = getListingCoordinates({ id, city, neighborhood });
     onCreate({
       id,
       name: name.trim(),
       category,
       city,
-      ...(coordinates ? { coordinates } : {}),
-      neighborhood: neighborhood.trim(),
+      coordinates: { ...coordinates },
+      neighborhood: manualMode ? neighborhood.trim() : matchedPlace!.name,
       description: description.trim(),
       image,
       images: [image, '/images/salon-pink.webp'],
@@ -131,7 +171,8 @@ export default function PartnerDialog({
         </p>
       </div>
       <p className="partner-image-note partner-location-note">
-        Your map pin will show the approximate neighbourhood or city centre.
+        Find your neighbourhood in the selected city and preview its map pin. If
+        the name isn’t clear, we’ll ask you to choose or confirm a location.
       </p>
       <form className="partner-form" onSubmit={submit}>
         <label>
@@ -179,7 +220,13 @@ export default function PartnerDialog({
               <MapPin size={13} />
               City
             </span>
-            <select value={city} onChange={(e) => setCity(e.target.value)}>
+            <select
+              value={city}
+              onChange={(e) => {
+                setCity(e.target.value);
+                resetLocation();
+              }}
+            >
               <option>Edmonton</option>
               <option>Calgary</option>
               <option>Canmore</option>
@@ -188,13 +235,183 @@ export default function PartnerDialog({
           <label>
             Neighbourhood
             <input
+              ref={neighborhoodRef}
               required
               maxLength={60}
               value={neighborhood}
-              onChange={(e) => setNeighborhood(e.target.value)}
+              onChange={(e) => {
+                setNeighborhood(e.target.value);
+                resetLocation();
+              }}
               placeholder="e.g. Old Strathcona"
+              aria-describedby="neighbourhood-help"
             />
           </label>
+        </div>
+        <div className="partner-location" aria-label="Neighbourhood location">
+          <p id="neighbourhood-help" className="partner-location-help">
+            Neighbourhoods are matched within {city}, Alberta. The pin shows an
+            area, not a verified business address.
+          </p>
+          {neighborhood.trim() && !manualMode && (
+            <>
+              {matchedPlace ? (
+                <p className="partner-location-matched" role="status">
+                  <Check size={15} />
+                  <span>
+                    Matched:{' '}
+                    <strong>
+                      {matchedPlace.name}, {matchedPlace.city}
+                    </strong>
+                  </span>
+                </p>
+              ) : resolution.status === 'ambiguous' ? (
+                <p className="partner-location-prompt" role="status">
+                  {resolution.matches.length > 1
+                    ? 'Several neighbourhoods match.'
+                    : 'Did you mean this neighbourhood?'}{' '}
+                  Choose the right one in {city}.
+                </p>
+              ) : (
+                <p className="partner-location-prompt" role="status">
+                  We couldn’t find “{neighborhood.trim()}” in {city}. Check the
+                  spelling and city, or set its location on the map.
+                </p>
+              )}
+              {resolution.otherCities.length > 0 && !matchedPlace && (
+                <p className="partner-location-help">
+                  That name is listed in {resolution.otherCities.join(' or ')}.
+                  Change the City field if that’s the place you meant.
+                </p>
+              )}
+              {resolution.status === 'ambiguous' && (
+                <div
+                  className="partner-location-options"
+                  role="group"
+                  aria-label={`Neighbourhood matches in ${city}`}
+                >
+                  {resolution.matches.slice(0, 8).map((match) => (
+                    <button
+                      type="button"
+                      key={match.id}
+                      aria-label={`Use ${match.name}, ${match.city}`}
+                      aria-pressed={matchedPlace?.id === match.id}
+                      onClick={() => {
+                        setChosenMatchId(match.id);
+                        setFormError('');
+                      }}
+                    >
+                      <MapPin size={15} />
+                      <span>
+                        <strong>{match.name}</strong>
+                        <small>
+                          {match.city}, Alberta
+                          {match.description ? ` · ${match.description}` : ''}
+                        </small>
+                      </span>
+                      {matchedPlace?.id === match.id && <Check size={15} />}
+                    </button>
+                  ))}
+                  {resolution.matches.length > 8 && (
+                    <p className="partner-location-help">
+                      Showing 8 of {resolution.matches.length} matches. Keep
+                      typing to narrow your neighbourhood.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+          {(manualMode || matchedPlace) && (
+            <div className="partner-location-preview">
+              <Suspense
+                fallback={
+                  <div className="partner-location-loading" role="status">
+                    Preparing your location preview…
+                  </div>
+                }
+              >
+                <LocationPicker
+                  city={city}
+                  coordinates={
+                    manualMode
+                      ? manualPoint
+                      : (matchedPlace?.coordinates ?? null)
+                  }
+                  editable={manualMode}
+                  label={
+                    manualMode
+                      ? `Set your location in ${city}`
+                      : `${matchedPlace?.name}, ${city}`
+                  }
+                  onChange={(point) => {
+                    if (manualMode) {
+                      setManualPoint(point);
+                      setManualConfirmed(false);
+                      setFormError('');
+                    }
+                  }}
+                />
+              </Suspense>
+            </div>
+          )}
+          {manualMode ? (
+            <div className="partner-location-manual">
+              <p className="partner-location-help">
+                Show us where your space is in {city}: click the map, drag the
+                pin, or enter its coordinates. Then confirm the pin below.
+              </p>
+              {manualConfirmed ? (
+                <p className="partner-location-matched" role="status">
+                  <Check size={15} />
+                  Pin confirmed in {city}.
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  className="partner-location-confirm"
+                  disabled={!manualPoint}
+                  onClick={() => {
+                    if (manualPoint && isWithinCityArea(manualPoint, city)) {
+                      setManualConfirmed(true);
+                      setFormError('');
+                    }
+                  }}
+                >
+                  <Check size={15} />
+                  Use this pin
+                </button>
+              )}
+              <button
+                type="button"
+                className="partner-location-link"
+                onClick={() => {
+                  setManualMode(false);
+                  setManualPoint(null);
+                  setManualConfirmed(false);
+                  setFormError('');
+                }}
+              >
+                Back to neighbourhood matches
+              </button>
+            </div>
+          ) : (
+            neighborhood.trim() && (
+              <button
+                type="button"
+                className="partner-location-link"
+                onClick={() => {
+                  setManualMode(true);
+                  setManualPoint(null);
+                  setManualConfirmed(false);
+                  setFormError('');
+                }}
+              >
+                <MapPin size={13} />
+                Set location on map
+              </button>
+            )
+          )}
         </div>
         <label>
           Tell us a little about your space

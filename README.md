@@ -2,7 +2,7 @@
 
 A beauty booking marketplace for Alberta, Canada. Discover independent hair, nail, skincare, brow, makeup, and massage experiences in Edmonton, Calgary, and Canmore.
 
-This is a working **front-end prototype**, with fictional providers, reviews, prices, and availability. Bookings do not contact a business, send an email, charge a card, or reserve a real appointment.
+This is an early marketplace with fictional sample providers, reviews, prices, and availability. It works as a browser demo or connects to Supabase for accounts, shared listings, and private bookings. Bookings do not contact a business, send an appointment email, or charge a card.
 
 ## Run locally
 
@@ -29,7 +29,20 @@ npm run preview
 3. Select the branch containing this app. Leave the base directory empty; the checked-in configuration sets the build command to `npm run build`, the publish directory to `dist`, and Node.js to version 24.
 4. Deploy the project. When the deploy is marked **Published**, open its generated `https://…netlify.app` URL. That is the shareable, interactive preview link.
 
-No environment variables or API keys are required for this prototype. Later pushes to the connected branch will trigger new Netlify deployments. Netlify serves the built static assets directly, with an app fallback for other routes.
+No environment variables or API keys are required for demo mode. Later pushes to the connected branch will trigger new Netlify deployments. Netlify serves the built static assets directly, with an app fallback for other routes.
+
+## Connect a shared database
+
+The Supabase integration adds email-link accounts, public listings and services,
+private favourites and appointments, shared availability, and database-enforced
+protection against overlapping bookings. Follow [the database setup guide](supabase/README.md)
+to apply the schema and connect your Netlify build using the project URL and
+public publishable key. A hosted Supabase project must be created separately.
+
+Without configuration, the demo below keeps working. Once configured, saves are
+confirmed by the database before the UI reports success. Connection failures
+show an error and Retry; they never silently store cloud actions in the browser.
+Existing browser demo data is not uploaded automatically.
 
 ## What works
 
@@ -46,7 +59,7 @@ No environment variables or API keys are required for this prototype. Later push
 - Match a partner listing’s neighbourhood within its selected city and preview the pin before creating it. Shared names across cities use the selected city; ambiguous names require a choice. Unmatched neighbourhoods require a manually placed, confirmed pin, rather than a city-centre guess. Changing the city, neighbourhood, or manual coordinates clears the previous confirmation.
 - Use the responsive desktop or mobile interface and keyboard-accessible dialogs.
 
-Favourites, listings, and bookings persist in this browser's local storage. Please use sample contact details. **Privacy & demo info → Clear my demo data** clears all saved demo information. There is no server-side persistence, authentication, payment processing, provider verification, email delivery, or shared availability across devices.
+In **demo mode**, favourites, listings, and bookings persist in this browser's local storage. Please use sample contact details. **Privacy & demo info → Clear my demo data** clears all saved demo information. In **connected mode**, listings are public and favourites and bookings belong to the signed-in account. Neither mode processes payments, verifies providers, or sends appointment emails.
 
 ## Check the app
 
@@ -73,6 +86,9 @@ npx playwright install chromium
 - `src/LocationPicker.tsx`: location preview and confirmed manual pin placement
 - `src/types.ts`: shared booking and navigation types
 - `src/storage.ts`: safe loading and validation of browser data
+- `src/backend.ts` and `src/useMarketplace.ts`: Supabase access, account state, and separate demo persistence
+- `src/AccountDialog.tsx`: email-link sign-in and sign-out
+- `supabase/`: database migration, optional fictional seed, setup guide, and PostgreSQL access/concurrency checks
 - `src/styles.css` and `src/booking.css`: responsive design
 - `tests/marketplace.spec.ts`: browser workflow tests
 
@@ -80,4 +96,4 @@ Built with React, TypeScript, Vite, Leaflet, and Lucide icons. Photography, font
 
 New partner listings always save explicit coordinates from a selected neighbourhood or a manually confirmed pin. Neighbourhood matching uses 629 local records: municipal-source Edmonton and Calgary geometry from a historical 2013 snapshot, plus the supported Canmore downtown area and documented aliases. The catalogue is not a current, exhaustive list; newer or unlisted areas can be located manually. Matched neighbourhood pins use points inside the source polygon, rather than a generic city centre. Older saved listings may retain their earlier approximate locations. No neighbourhood or manual-pin lookup sends entered names to a geocoding service. Source, coverage, and licence notes are in [public/locations/README.md](public/locations/README.md).
 
-The next production steps are user and provider accounts, a database/API, verified businesses, a shared availability system, and payment and notification integrations.
+Further production work includes verified providers, provider calendar management, multiple staff schedules, payment and notification integrations, and self-service account deletion.

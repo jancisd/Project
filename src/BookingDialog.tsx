@@ -19,7 +19,15 @@ type Props = {
   listing: Listing;
   bookings: Booking[];
   onClose: () => void;
-  onBooked: (booking: Booking) => void;
+  onBooked: (
+    booking: Booking,
+    serviceId: string,
+  ) => Promise<Booking> | Booking | void;
+  cloud?: boolean;
+  loadAvailability?: (
+    listingId: string,
+    date: string,
+  ) => Promise<{ time: string; duration: number }[]>;
 };
 
 function albertaNow() {
@@ -88,6 +96,8 @@ export default function BookingDialog({
   bookings,
   onClose,
   onBooked,
+  cloud = false,
+  loadAvailability,
 }: Props) {
   const [serviceId, setServiceId] = useState(listing.services[0]?.id ?? '');
   const [date, setDate] = useState(dayFromNow(1));
@@ -95,6 +105,16 @@ export default function BookingDialog({
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const [availabilityVersion, setAvailabilityVersion] = useState(0);
+  const [availability, setAvailability] = useState<{
+    key: string;
+    busy: { time: string; duration: number }[];
+    loading: boolean;
+    error: string;
+  }>({ key: '', busy: [], loading: false, error: '' });
+  const mounted = useRef(true);
+  const attempt = useRef<{ signature: string; id: string } | null>(null);
   const [confirmed, setConfirmed] = useState<Booking | null>(null);
   const submitted = useRef(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -109,10 +129,69 @@ export default function BookingDialog({
   const validDate =
     /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= today && date <= lastDate;
 
+  const availabilityKey = `${listing.id}:${date}`;
+  const loadingAvailability =
+    Boolean(loadAvailability) &&
+    (availability.key !== availabilityKey || availability.loading);
+  const availabilityError =
+    availability.key === availabilityKey ? availability.error : '';
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!loadAvailability || !validDate) return;
+    let cancelled = false;
+    setAvailability({
+      key: availabilityKey,
+      busy: [],
+      loading: true,
+      error: '',
+    });
+    loadAvailability(listing.id, date)
+      .then((busy) => {
+        if (!cancelled)
+          setAvailability({
+            key: availabilityKey,
+            busy,
+            loading: false,
+            error: '',
+          });
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled)
+          setAvailability({
+            key: availabilityKey,
+            busy: [],
+            loading: false,
+            error:
+              reason instanceof Error
+                ? reason.message
+                : 'We couldn’t check availability. Please try again.',
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    listing.id,
+    date,
+    loadAvailability,
+    validDate,
+    availabilityKey,
+    availabilityVersion,
+  ]);
+
   function slotAvailable(slot: string) {
     const now = albertaNow();
     if (
       !validDate ||
+      loadingAvailability ||
+      Boolean(availabilityError) ||
       !service ||
       date < now.date ||
       (date === now.date && timeInMinutes(slot) <= now.minutes)
@@ -121,6 +200,14 @@ export default function BookingDialog({
     const start = timeInMinutes(slot);
     const end = start + service.duration;
     if (end > 18 * 60) return false;
+    if (
+      loadAvailability &&
+      availability.busy.some((busy) => {
+        const bookedStart = timeInMinutes(busy.time);
+        return start < bookedStart + busy.duration && end > bookedStart;
+      })
+    )
+      return false;
     return !bookings.some((booking) => {
       if (
         booking.listingId !== listing.id ||
@@ -169,7 +256,7 @@ export default function BookingDialog({
       if (event.key !== 'Tab' || !dialogRef.current) return;
       const focusable = Array.from(
         dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]',
+          'button:enabled, input:enabled, select:enabled, textarea:enabled, a[href], [tabindex="0"]',
         ),
       ).filter((element) => element.getClientRects().length > 0);
       const first = focusable[0];
@@ -211,7 +298,7 @@ export default function BookingDialog({
         ?.focus();
   }, [confirmed]);
 
-  function confirmBooking(event: FormEvent<HTMLFormElement>) {
+  async function confirmBooking(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     if (submitted.current) return;
@@ -232,8 +319,18 @@ export default function BookingDialog({
       setError('Please enter your name and a valid email address.');
       return;
     }
+    const signature = JSON.stringify([
+      listing.id,
+      service.id,
+      date,
+      time,
+      guestName.trim(),
+      guestEmail.trim(),
+    ]);
+    if (attempt.current?.signature !== signature)
+      attempt.current = { signature, id: crypto.randomUUID() };
     const booking: Booking = {
-      id: crypto.randomUUID(),
+      id: attempt.current.id,
       listingId: listing.id,
       listingName: listing.name,
       listingImage: listing.image,
@@ -249,12 +346,25 @@ export default function BookingDialog({
       status: 'confirmed',
     };
     submitted.current = true;
+    setPending(true);
     try {
-      onBooked(booking);
-      setConfirmed(booking);
-    } catch {
+      const saved = await onBooked(booking, service.id);
+      if (mounted.current) setConfirmed(saved ?? booking);
+    } catch (reason) {
       submitted.current = false;
-      setError('We couldn’t save your booking. Please try again.');
+      if (mounted.current) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : 'We couldn’t save your booking. Please try again.',
+        );
+        if (reason instanceof Error && reason.message.includes('just booked')) {
+          setTime('');
+          setAvailabilityVersion((value) => value + 1);
+        }
+      }
+    } finally {
+      if (mounted.current) setPending(false);
     }
   }
 
@@ -294,8 +404,10 @@ export default function BookingDialog({
               You’re all booked in.
             </h2>
             <p>
-              Your demo appointment is in your appointment book. Find all the
-              details in <strong>My appointments</strong>.
+              {cloud
+                ? 'Your appointment is saved to your account. Find all the details in '
+                : 'Your demo appointment is in your appointment book. Find all the details in '}
+              <strong>My appointments</strong>.
             </p>
             <div className="booking-success-card">
               <img src={listing.image} alt={listing.name} />
@@ -317,8 +429,10 @@ export default function BookingDialog({
               <strong>{money(confirmed.price)} CAD</strong>
             </div>
             <p className="booking-demo-note">
-              <ShieldCheck size={15} /> This is a demo. No provider has been
-              contacted, no email sent, and no payment collected.
+              <ShieldCheck size={15} />{' '}
+              {cloud
+                ? 'Saved to your account. No provider has been contacted, no email sent, and no payment collected.'
+                : 'This is a demo. No provider has been contacted, no email sent, and no payment collected.'}
             </p>
             <button className="booking-primary" onClick={onClose}>
               Keep exploring <ChevronRight size={17} />
@@ -367,7 +481,8 @@ export default function BookingDialog({
                     <span>{listing.professional.title}</span>
                   </div>
                   <span className="booking-verified">
-                    <ShieldCheck size={15} /> Demo profile
+                    <ShieldCheck size={15} />{' '}
+                    {cloud ? 'Unverified profile' : 'Demo profile'}
                   </span>
                 </div>
                 <div className="booking-amenities">
@@ -403,158 +518,198 @@ export default function BookingDialog({
                   ))}
                 </div>
               </section>
-              <form className="booking-form" onSubmit={confirmBooking}>
-                <div className="booking-form-heading">
-                  <span className="booking-eyebrow">
-                    MAKE ROOM FOR YOURSELF
-                  </span>
-                  <h3>Find your little reset.</h3>
-                  <p>Choose a service and a time that’s yours.</p>
-                </div>
-                <fieldset className="booking-fieldset">
-                  <legend>Choose your service</legend>
-                  <div className="booking-services">
-                    {listing.services.map((item) => (
-                      <label
-                        className={`booking-service${item.id === serviceId ? ' is-selected' : ''}`}
-                        key={item.id}
+              <form
+                className="booking-form"
+                onSubmit={confirmBooking}
+                aria-busy={pending}
+              >
+                <fieldset className="booking-controls" disabled={pending}>
+                  <div className="booking-form-heading">
+                    <span className="booking-eyebrow">
+                      MAKE ROOM FOR YOURSELF
+                    </span>
+                    <h3>Find your little reset.</h3>
+                    <p>Choose a service and a time that’s yours.</p>
+                  </div>
+                  <fieldset className="booking-fieldset">
+                    <legend>Choose your service</legend>
+                    <div className="booking-services">
+                      {listing.services.map((item) => (
+                        <label
+                          className={`booking-service${item.id === serviceId ? ' is-selected' : ''}`}
+                          key={item.id}
+                        >
+                          <input
+                            type="radio"
+                            name="service"
+                            value={item.id}
+                            checked={serviceId === item.id}
+                            onChange={() => {
+                              setServiceId(item.id);
+                              setTime('');
+                              setError('');
+                            }}
+                          />
+                          <span
+                            className="booking-service-radio"
+                            aria-hidden="true"
+                          >
+                            {item.id === serviceId && <span />}
+                          </span>
+                          <span className="booking-service-copy">
+                            <strong>{item.name}</strong>
+                            <span>
+                              {item.duration} min · {item.description}
+                            </span>
+                          </span>
+                          <strong className="booking-service-price">
+                            {money(item.price)}
+                          </strong>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <label className="booking-label" htmlFor="booking-date">
+                    Your day
+                  </label>
+                  <input
+                    className="booking-input booking-date"
+                    id="booking-date"
+                    name="date"
+                    type="date"
+                    min={today}
+                    max={lastDate}
+                    value={date}
+                    required
+                    onChange={(event) => {
+                      setDate(event.target.value);
+                      setTime('');
+                      setError('');
+                    }}
+                  />
+                  <fieldset className="booking-fieldset booking-time-fieldset">
+                    <legend>
+                      Available times <span>Alberta local time</span>
+                    </legend>
+                    {loadingAvailability && (
+                      <p className="booking-availability" role="status">
+                        Checking available times…
+                      </p>
+                    )}
+                    {availabilityError && (
+                      <div
+                        className="booking-availability booking-error"
+                        role="alert"
                       >
-                        <input
-                          type="radio"
-                          name="service"
-                          value={item.id}
-                          checked={serviceId === item.id}
-                          onChange={() => {
-                            setServiceId(item.id);
+                        <p>{availabilityError}</p>
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => {
                             setTime('');
+                            setAvailabilityVersion((value) => value + 1);
+                          }}
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+                    <div className="booking-times">
+                      {times.map((slot) => (
+                        <button
+                          type="button"
+                          className={`booking-time${time === slot ? ' is-selected' : ''}`}
+                          key={slot}
+                          disabled={!slotAvailable(slot)}
+                          aria-pressed={time === slot}
+                          onClick={() => {
+                            setTime(slot);
                             setError('');
                           }}
-                        />
-                        <span
-                          className="booking-service-radio"
-                          aria-hidden="true"
                         >
-                          {item.id === serviceId && <span />}
-                        </span>
-                        <span className="booking-service-copy">
-                          <strong>{item.name}</strong>
-                          <span>
-                            {item.duration} min · {item.description}
-                          </span>
-                        </span>
-                        <strong className="booking-service-price">
-                          {money(item.price)}
-                        </strong>
+                          {prettyTime(slot)}
+                        </button>
+                      ))}
+                    </div>
+                    {validDate &&
+                      !loadingAvailability &&
+                      !availabilityError &&
+                      !times.some(slotAvailable) && (
+                        <p className="booking-empty-times">
+                          No times left on this day. Try another date.
+                        </p>
+                      )}
+                  </fieldset>
+                  <div className="booking-guest-fields">
+                    <div>
+                      <label className="booking-label" htmlFor="booking-name">
+                        Your name
                       </label>
-                    ))}
+                      <input
+                        className="booking-input"
+                        id="booking-name"
+                        name="name"
+                        autoComplete="name"
+                        placeholder="First and last name"
+                        value={guestName}
+                        onChange={(event) => setGuestName(event.target.value)}
+                        required
+                        minLength={2}
+                        maxLength={100}
+                      />
+                    </div>
+                    <div>
+                      <label className="booking-label" htmlFor="booking-email">
+                        Email address
+                      </label>
+                      <input
+                        className="booking-input"
+                        id="booking-email"
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        placeholder="you@example.com"
+                        value={guestEmail}
+                        onChange={(event) => setGuestEmail(event.target.value)}
+                        required
+                        maxLength={200}
+                      />
+                    </div>
                   </div>
-                </fieldset>
-                <label className="booking-label" htmlFor="booking-date">
-                  Your day
-                </label>
-                <input
-                  className="booking-input booking-date"
-                  id="booking-date"
-                  name="date"
-                  type="date"
-                  min={today}
-                  max={lastDate}
-                  value={date}
-                  required
-                  onChange={(event) => {
-                    setDate(event.target.value);
-                    setTime('');
-                    setError('');
-                  }}
-                />
-                <fieldset className="booking-fieldset booking-time-fieldset">
-                  <legend>
-                    Available times <span>Alberta local time</span>
-                  </legend>
-                  <div className="booking-times">
-                    {times.map((slot) => (
-                      <button
-                        type="button"
-                        className={`booking-time${time === slot ? ' is-selected' : ''}`}
-                        key={slot}
-                        disabled={!slotAvailable(slot)}
-                        aria-pressed={time === slot}
-                        onClick={() => {
-                          setTime(slot);
-                          setError('');
-                        }}
-                      >
-                        {prettyTime(slot)}
-                      </button>
-                    ))}
+                  <div className="booking-price-line">
+                    <span>
+                      Service total <small>No extra booking fees</small>
+                    </span>
+                    <strong>
+                      {money(service?.price ?? 0)} <small>CAD</small>
+                    </strong>
                   </div>
-                  {validDate && !times.some(slotAvailable) && (
-                    <p className="booking-empty-times">
-                      No times left on this day. Try another date.
+                  {error && (
+                    <p className="booking-error" role="alert">
+                      {error}
                     </p>
                   )}
-                </fieldset>
-                <div className="booking-guest-fields">
-                  <div>
-                    <label className="booking-label" htmlFor="booking-name">
-                      Your name
-                    </label>
-                    <input
-                      className="booking-input"
-                      id="booking-name"
-                      name="name"
-                      autoComplete="name"
-                      placeholder="First and last name"
-                      value={guestName}
-                      onChange={(event) => setGuestName(event.target.value)}
-                      required
-                      minLength={2}
-                      maxLength={100}
-                    />
-                  </div>
-                  <div>
-                    <label className="booking-label" htmlFor="booking-email">
-                      Email address
-                    </label>
-                    <input
-                      className="booking-input"
-                      id="booking-email"
-                      name="email"
-                      type="email"
-                      autoComplete="email"
-                      placeholder="you@example.com"
-                      value={guestEmail}
-                      onChange={(event) => setGuestEmail(event.target.value)}
-                      required
-                      maxLength={200}
-                    />
-                  </div>
-                </div>
-                <div className="booking-price-line">
-                  <span>
-                    Service total <small>No extra booking fees</small>
-                  </span>
-                  <strong>
-                    {money(service?.price ?? 0)} <small>CAD</small>
-                  </strong>
-                </div>
-                {error && (
-                  <p className="booking-error" role="alert">
-                    {error}
+                  <button
+                    className="booking-primary"
+                    type="submit"
+                    disabled={pending || !time || !slotAvailable(time)}
+                  >
+                    {pending
+                      ? 'Saving your appointment…'
+                      : 'Book my appointment'}{' '}
+                    <ChevronRight size={17} />
+                  </button>
+                  <p className="booking-demo-note">
+                    <ShieldCheck size={14} />{' '}
+                    {cloud
+                      ? 'Early release · no payment collected.'
+                      : 'Demo booking · no payment collected.'}
+                    <br />
+                    {cloud
+                      ? 'Saved to your account; no provider notification or email is sent.'
+                      : 'Saved on this device; no email is sent.'}
                   </p>
-                )}
-                <button
-                  className="booking-primary"
-                  type="submit"
-                  disabled={!time || !slotAvailable(time)}
-                >
-                  Book my appointment <ChevronRight size={17} />
-                </button>
-                <p className="booking-demo-note">
-                  <ShieldCheck size={14} /> Demo booking · no payment collected.
-                  <br />
-                  Saved on this device; no email is sent.
-                </p>
+                </fieldset>
               </form>
             </div>
           </>

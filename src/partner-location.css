@@ -139,3 +139,18 @@
     padding: 10px;
   }
 }
+
+.partner-controls {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+
+.partner-controls > .primary-button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}

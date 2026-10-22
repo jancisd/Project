@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "playwright test",
+    "test:cloud": "playwright test --config playwright.database.config.ts",
+    "test:database": "bash scripts/test-database.sh",
     "test:ui": "playwright test --ui",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -15,6 +17,7 @@
   "dependencies": {
     "@fontsource/cormorant-garamond": "5.3.0",
     "@fontsource/dm-sans": "5.3.0",
+    "@supabase/supabase-js": "2.118.0",
     "leaflet": "1.9.4",
     "lucide-react": "1.60.0",
     "react": "19.3.1",

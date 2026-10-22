@@ -1,0 +1,165 @@
+.account-dialog {
+  max-width: 440px;
+}
+
+.account-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 10px 14px;
+  font-size: 12px;
+}
+
+.account-button:hover {
+  background: #edf0e7;
+}
+
+.connection-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 14px 18px;
+  background: #edf0e7;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.connection-error {
+  color: #924c3e;
+  background: #fff2ed;
+}
+
+@media (max-width: 400px) {
+  .header-inner:has(.account-button) {
+    gap: 8px;
+  }
+  .header-inner:has(.account-button) .brand {
+    font-size: 23px;
+  }
+  .header-inner:has(.account-button) .header-actions {
+    gap: 6px;
+  }
+  .account-button {
+    padding: 9px 11px;
+    font-size: 11px;
+  }
+}
+
+.account-dialog .dialog-heading {
+  align-items: flex-start;
+}
+
+.account-dialog .dialog-heading h2 {
+  padding-top: 3px;
+}
+
+.account-form {
+  display: grid;
+  gap: 13px;
+}
+
+.account-form .dialog-intro {
+  margin-bottom: 9px;
+}
+
+.account-form label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.account-form input {
+  min-width: 0;
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--pine);
+  background: #fffefa;
+  font-size: 16px;
+}
+
+.account-form input::placeholder {
+  color: #8b9188;
+}
+
+.account-submit {
+  width: 100%;
+  min-height: 46px;
+}
+
+.account-submit:disabled {
+  opacity: 0.65;
+}
+
+.account-note {
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+
+.account-details {
+  display: grid;
+  gap: 19px;
+}
+
+.account-email {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 9px;
+  padding: 15px;
+  background: var(--cream);
+  font-size: 13px;
+}
+
+.account-email span,
+.account-sent strong {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.account-sent {
+  display: grid;
+  gap: 17px;
+  padding-top: 8px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.account-mail-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #e8ecdf;
+}
+
+.account-sent h3 {
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.account-sent .text-button {
+  justify-self: start;
+  text-align: left;
+}
+
+.account-error {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #edc5b9;
+  border-radius: 8px;
+  background: #fff2ed;
+  color: #924c3e;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}

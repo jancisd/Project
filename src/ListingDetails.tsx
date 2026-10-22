@@ -148,8 +148,9 @@ export default function ListingDetails({
       <p className="listing-details-location-note">
         <MapPin size={14} />
         <span>
-          Highlighted on the map. This is an approximate demo location, not a
-          verified business address.
+          {listing.isDemo === false
+            ? 'Highlighted on the map. This pin shows the selected neighbourhood or confirmed location; the business address has not been verified.'
+            : 'Highlighted on the map. This is an approximate demo location, not a verified business address.'}
         </span>
       </p>
 
@@ -185,7 +186,7 @@ export default function ListingDetails({
           </div>
           <span className="listing-details-demo-profile">
             <Sparkles size={13} />
-            Demo profile
+            {listing.isDemo === false ? 'Unverified profile' : 'Demo profile'}
           </span>
         </div>
         {listing.amenities.length > 0 && (
@@ -266,8 +267,9 @@ export default function ListingDetails({
       </section>
 
       <p className="listing-details-demo-note">
-        This is a demo studio. No real reservation, payment, or message to a
-        professional will be made.
+        {listing.isDemo === false
+          ? 'Bookings are recorded in your account. Provider verification, payments, and appointment notifications are not yet available.'
+          : 'This is a demo studio. No real reservation, payment, or message to a professional will be made.'}
       </p>
     </section>
   );

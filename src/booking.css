@@ -693,3 +693,16 @@
     transition: none !important;
   }
 }
+
+.booking-controls {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.booking-availability {
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0 0 12px;
+}

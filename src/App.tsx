@@ -26,19 +26,16 @@ import {
   Star,
   X,
 } from 'lucide-react';
-import { categories, listings as demoListings } from './data';
+import { categories } from './data';
 import type { Category, Listing } from './data';
-import type { Booking, View } from './types';
+import type { View } from './types';
 import BookingDialog from './BookingDialog';
 import PartnerDialog from './PartnerDialog';
 import ListingDetails from './ListingDetails';
 import { getListingCoordinates } from './geography';
-import {
-  readStored,
-  isStringArray,
-  isBookingArray,
-  isListingArray,
-} from './storage';
+import { fetchAvailability } from './backend';
+import useMarketplace from './useMarketplace';
+import AccountDialog from './AccountDialog';
 
 const cities = ['Edmonton', 'Calgary', 'Canmore'];
 const DiscoverMap = lazy(() => import('./DiscoverMap'));
@@ -282,6 +279,18 @@ function EmptyState({
 }
 
 function App() {
+  const marketplace = useMarketplace();
+  const {
+    cloud,
+    session,
+    authReady,
+    listings: allListings,
+    saved,
+    bookings,
+  } = marketplace;
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [cancelError, setCancelError] = useState('');
   const [view, setView] = useState<View>('explore');
   const [category, setCategory] = useState<Category>('All');
   const [location, setLocation] = useState('');
@@ -306,15 +315,6 @@ function App() {
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [mapArea, setMapArea] = useState<MapArea | null>(null);
-  const [saved, setSaved] = useState<string[]>(() =>
-    readStored('airstethics:saved', [], isStringArray),
-  );
-  const [bookings, setBookings] = useState<Booking[]>(() =>
-    readStored('airstethics:bookings', [], isBookingArray),
-  );
-  const [localListings, setLocalListings] = useState<Listing[]>(() =>
-    readStored('airstethics:listings', [], isListingArray),
-  );
   const resultsRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const discoveryLayoutRef = useRef<HTMLDivElement>(null);
@@ -357,24 +357,11 @@ function App() {
     }
   }, [toast]);
   useEffect(() => {
-    try {
-      localStorage.setItem('airstethics:saved', JSON.stringify(saved));
-      localStorage.setItem('airstethics:bookings', JSON.stringify(bookings));
-      localStorage.setItem(
-        'airstethics:listings',
-        JSON.stringify(localListings),
-      );
-    } catch {
-      setToast(
-        'Browser storage is unavailable. Changes will last for this visit only.',
-      );
-    }
-  }, [saved, bookings, localListings]);
-
-  const allListings = useMemo(
-    () => [...localListings, ...demoListings],
-    [localListings],
-  );
+    setSelected(null);
+    setPartnerOpen(false);
+    setCancelId(null);
+    setCancelError('');
+  }, [session?.user.id]);
   const detailsListing = allListings.find(
     (listing) => listing.id === detailsId,
   );
@@ -471,16 +458,34 @@ function App() {
     setMapSelectedId(null);
     setHighlightedId(null);
   };
-  const toggleSave = (id: string) => {
+  const needsAccount = () => {
+    if (!cloud || (authReady && session)) return false;
+    setAccountOpen(true);
+    return true;
+  };
+  const openPartner = () => {
+    if (!needsAccount()) setPartnerOpen(true);
+  };
+  const openBooking = (listing: Listing) => {
+    if (!needsAccount()) setSelected(listing);
+  };
+  const toggleSave = async (id: string) => {
+    if (needsAccount()) return;
     const wasSaved = saved.includes(id);
-    setSaved((prev) =>
-      wasSaved ? prev.filter((s) => s !== id) : [...prev, id],
-    );
-    setToast(
-      wasSaved
-        ? 'Removed from your favourites'
-        : 'A little beauty, saved for later',
-    );
+    try {
+      await marketplace.toggleSave(id);
+      setToast(
+        wasSaved
+          ? 'Removed from your favourites'
+          : 'A little beauty, saved for later',
+      );
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : 'We couldn’t update your saved places.',
+      );
+    }
   };
   const submitSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -599,12 +604,17 @@ function App() {
             </button>
           </nav>
           <div className="header-actions">
-            <button
-              className="partner-button"
-              onClick={() => setPartnerOpen(true)}
-            >
+            <button className="partner-button" onClick={openPartner}>
               List your space <ArrowUpRightIcon />
             </button>
+            {cloud && (
+              <button
+                className="account-button"
+                onClick={() => setAccountOpen(true)}
+              >
+                {session ? 'Account' : 'Sign in'}
+              </button>
+            )}
             <button
               className="mobile-menu icon-button"
               aria-label={mobileMenu ? 'Close navigation' : 'Open navigation'}
@@ -621,6 +631,24 @@ function App() {
       </header>
 
       <main id="main-content">
+        {marketplace.loading && (
+          <div className="connection-notice page-width" role="status">
+            Loading your places and appointments…
+          </div>
+        )}
+        {marketplace.error && (
+          <div
+            className="connection-notice connection-error page-width"
+            role="alert"
+          >
+            <span>{marketplace.error}</span>
+            {cloud && (
+              <button className="text-button" onClick={marketplace.refresh}>
+                Retry
+              </button>
+            )}
+          </div>
+        )}
         {view === 'explore' && (
           <>
             <div className="discovery-top page-width">
@@ -819,7 +847,7 @@ function App() {
                     saved={saved.includes(detailsListing.id)}
                     onSave={() => toggleSave(detailsListing.id)}
                     onClose={closeListingDetails}
-                    onBook={() => setSelected(detailsListing)}
+                    onBook={() => openBooking(detailsListing)}
                   />
                 ) : (
                   <>
@@ -887,7 +915,7 @@ function App() {
                         if (detailsId) setDetailsId(id);
                       }}
                       hideSelectedPreview={Boolean(detailsListing)}
-                      onBook={setSelected}
+                      onBook={openBooking}
                       onSave={toggleSave}
                       saved={saved}
                       onSearchArea={(bounds) => {
@@ -958,10 +986,19 @@ function App() {
             <div className="demo-notice">
               <Sparkles size={17} />
               <p>
-                This is your demo appointment book. No real reservations or
-                payments are made.
+                {cloud
+                  ? 'Your appointments are saved to your account. This early release has sample studios and collects no payments.'
+                  : 'This is your demo appointment book. No real reservations or payments are made.'}
               </p>
             </div>
+            {cloud && !session && (
+              <button
+                className="primary-button"
+                onClick={() => setAccountOpen(true)}
+              >
+                Sign in to see your appointments
+              </button>
+            )}
             {bookings.length ? (
               <div className="appointments-list">
                 {[...bookings]
@@ -1051,7 +1088,7 @@ function App() {
               Bring your craft to airstethics. We’ll help your people find you.
             </p>
           </div>
-          <button onClick={() => setPartnerOpen(true)}>
+          <button onClick={openPartner}>
             Make yourself at home <ArrowUpRightIcon />
           </button>
         </section>
@@ -1092,10 +1129,10 @@ function App() {
         <BookingDialog
           listing={selected}
           bookings={bookings}
+          cloud={cloud}
+          loadAvailability={cloud ? fetchAvailability : undefined}
           onClose={() => setSelected(null)}
-          onBooked={(booking) => {
-            setBookings((prev) => [booking, ...prev]);
-          }}
+          onBooked={marketplace.createBooking}
         />
       )}
       {filtersOpen && (
@@ -1166,13 +1203,18 @@ function App() {
       )}
       {partnerOpen && (
         <PartnerDialog
+          cloud={cloud}
           onClose={() => setPartnerOpen(false)}
-          onCreate={(listing) => {
-            setLocalListings((prev) => [listing, ...prev]);
+          onCreate={async (listing) => {
+            await marketplace.createListing(listing);
             clearFilters();
             setView('explore');
             setPartnerOpen(false);
-            setToast('Your demo space is ready to discover');
+            setToast(
+              cloud
+                ? 'Your space is published and ready to discover'
+                : 'Your demo space is ready to discover',
+            );
             setTimeout(
               () => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }),
               100,
@@ -1183,26 +1225,48 @@ function App() {
       {cancelId && (
         <Dialog title="A change of plans?" onClose={() => setCancelId(null)}>
           <p className="dialog-intro">
-            Cancel this demo appointment? You can always make a little time for
-            yourself later.
+            Cancel this {cloud ? '' : 'demo '}appointment? You can always make a
+            little time for yourself later.
           </p>
+          {cancelError && (
+            <p className="booking-error" role="alert">
+              {cancelError}
+            </p>
+          )}
           <div className="dialog-footer">
-            <button className="text-button" onClick={() => setCancelId(null)}>
+            <button
+              className="text-button"
+              disabled={cancelPending}
+              onClick={() => {
+                setCancelId(null);
+                setCancelError('');
+              }}
+            >
               Keep appointment
             </button>
             <button
               className="primary-button"
-              onClick={() => {
-                setBookings((prev) =>
-                  prev.map((b) =>
-                    b.id === cancelId ? { ...b, status: 'cancelled' } : b,
-                  ),
-                );
-                setCancelId(null);
-                setToast('Your appointment has been cancelled');
+              disabled={cancelPending}
+              onClick={async () => {
+                if (cancelPending) return;
+                setCancelPending(true);
+                setCancelError('');
+                try {
+                  await marketplace.cancelBooking(cancelId);
+                  setCancelId(null);
+                  setToast('Your appointment has been cancelled');
+                } catch (error) {
+                  setCancelError(
+                    error instanceof Error
+                      ? error.message
+                      : 'We couldn’t cancel your appointment.',
+                  );
+                } finally {
+                  setCancelPending(false);
+                }
               }}
             >
-              Yes, cancel appointment
+              {cancelPending ? 'Cancelling…' : 'Yes, cancel appointment'}
             </button>
           </div>
         </Dialog>
@@ -1236,6 +1300,24 @@ function App() {
                 </p>
               </div>
             </div>
+          ) : cloud ? (
+            <div className="info-copy">
+              <p>
+                Listings are shared publicly. Your saved places, appointment
+                details, name, and email are stored in your account and are
+                private to you.
+              </p>
+              <p>
+                This early release does not collect payments or send appointment
+                emails. Signing out removes your account information from the
+                page. Existing browser demo data is kept separate and is never
+                uploaded automatically.
+              </p>
+              <p>
+                To request removal of account data, contact the site owner.
+                Signing out does not delete information from the database.
+              </p>
+            </div>
           ) : (
             <div className="info-copy">
               <p>
@@ -1251,9 +1333,7 @@ function App() {
               <button
                 className="text-button danger-link"
                 onClick={() => {
-                  setSaved([]);
-                  setBookings([]);
-                  setLocalListings([]);
+                  marketplace.clearDemo();
                   setInfo(null);
                   setToast('Your saved demo data has been cleared');
                 }}
@@ -1263,6 +1343,14 @@ function App() {
             </div>
           )}
         </Dialog>
+      )}
+      {accountOpen && (
+        <AccountDialog
+          email={session?.user.email}
+          onClose={() => setAccountOpen(false)}
+          onSendLink={marketplace.sendSignInLink}
+          onSignOut={marketplace.signOut}
+        />
       )}
       {toast && (
         <div className="toast" role="status">

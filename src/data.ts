@@ -17,6 +17,7 @@ export type Service = {
 
 export type Listing = {
   id: string;
+  isDemo?: boolean;
   name: string;
   category: Exclude<Category, 'All'>;
   neighborhood: string;

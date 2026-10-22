@@ -236,6 +236,18 @@
   box-shadow: 0 0 0 2px var(--pine);
 }
 
+.discovery-listing-grid .listing-card {
+  cursor: pointer;
+}
+
+.discovery-layout {
+  scroll-margin-top: 18px;
+}
+
+.has-listing-details .discovery-list {
+  min-width: 0;
+}
+
 .discovery-map-shell {
   position: sticky;
   top: 18px;
@@ -455,6 +467,65 @@
 
   .is-map-visible .discovery-list {
     display: none;
+  }
+
+  .has-listing-details .discovery-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    align-items: stretch;
+  }
+
+  .has-listing-details .discovery-list {
+    display: block;
+    order: 1;
+  }
+
+  .has-listing-details .discovery-map-shell {
+    order: 0;
+    position: sticky;
+    top: 10px;
+    z-index: 12;
+    height: clamp(230px, 33dvh, 320px);
+    min-height: 0;
+    max-height: 320px;
+    box-shadow: 0 5px 18px #233a3112;
+  }
+
+  .has-listing-details .view-toggle {
+    display: none;
+  }
+
+  .has-listing-details .map-view-controls,
+  .has-listing-details .map-zoom-controls {
+    top: 12px;
+    bottom: auto;
+  }
+
+  .has-listing-details .map-zoom-controls {
+    right: 12px;
+  }
+
+  .has-listing-details .map-view-controls {
+    right: 55px;
+  }
+
+  .has-listing-details .map-area-controls {
+    left: 10px;
+    top: 12px;
+    right: 100px;
+  }
+
+  .has-listing-details .map-search-area,
+  .has-listing-details .map-clear-area {
+    font-size: 9px;
+    padding: 8px 10px;
+  }
+
+  .has-listing-details .map-detail-status {
+    left: 10px;
+    bottom: 36px;
+    font-size: 8px;
   }
 
   .discovery-map-shell {

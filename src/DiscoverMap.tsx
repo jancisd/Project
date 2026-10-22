@@ -46,6 +46,7 @@ type Props = {
   listings: Listing[];
   selectedId: string | null;
   highlightedId?: string | null;
+  hideSelectedPreview?: boolean;
   onSelect: (id: string | null) => void;
   onBook: (listing: Listing) => void;
   onSave: (id: string) => void;
@@ -261,6 +262,7 @@ export default function DiscoverMap({
   listings,
   selectedId,
   highlightedId = null,
+  hideSelectedPreview = false,
   onSelect,
   onBook,
   onSave,
@@ -782,7 +784,7 @@ export default function DiscoverMap({
         </div>
       )}
 
-      {selected && (
+      {selected && !hideSelectedPreview && (
         <div
           className="map-preview"
           role="region"

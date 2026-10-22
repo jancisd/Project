@@ -35,6 +35,7 @@ No environment variables or API keys are required for this prototype. Later push
 
 - Search by studio, service, city, and neighbourhood; browse six beauty categories.
 - Explore a worldwide interactive map, starting in Alberta, alongside the listings. Price pins and clusters open studio previews; **On map** locates a listing, and **View & book** opens its booking form.
+- Click a listing to open its complete details beside its selected map location. On mobile, the map stays above the details while you scroll. **Choose a service & time** opens booking, and **Back to results** restores your previous results or favourites.
 - Pan or zoom, then use **Search this area** to filter results geographically. **Clear map area** restores the full search. Switch between the list and map with **Show map / Show list**; mobile starts with the list.
 - Filter by starting price or rating, and sort by price or rating.
 - Save and remove favourites.

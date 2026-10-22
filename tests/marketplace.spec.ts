@@ -100,6 +100,10 @@ test('an appointment is saved, reserves its slot, and can be cancelled', async (
     .getByRole('button', { name: /^Save / })
     .getAttribute('aria-label'))!.replace(/^Save /, '');
   await firstCard.getByRole('button', { name: /^View / }).click();
+  await page
+    .getByTestId('listing-details')
+    .getByRole('button', { name: 'Choose a service & time', exact: true })
+    .click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(
@@ -119,9 +123,8 @@ test('an appointment is saved, reserves its slot, and can be cancelled', async (
 
   // The stored appointment must actually reserve its slot in subsequent visits.
   await page
-    .getByTestId('listing-card')
-    .filter({ hasText: listingName })
-    .getByRole('button', { name: /^View / })
+    .getByTestId('listing-details')
+    .getByRole('button', { name: 'Choose a service & time', exact: true })
     .click();
   await expect(dialog.getByLabel('Your day')).toHaveValue(bookingDate);
   await expect(
@@ -153,7 +156,7 @@ test('an appointment is saved, reserves its slot, and can be cancelled', async (
   ).toHaveCount(0);
 });
 
-test('booking dialogs close with Escape and return focus to the listing', async ({
+test('booking dialogs close with Escape and return focus to the listing details', async ({
   page,
 }) => {
   const open = page
@@ -161,6 +164,10 @@ test('booking dialogs close with Escape and return focus to the listing', async 
     .first()
     .getByRole('button', { name: /^View / });
   await open.click();
+  const book = page
+    .getByTestId('listing-details')
+    .getByRole('button', { name: 'Choose a service & time', exact: true });
+  await book.click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.locator('header.site-header')).toHaveJSProperty(
     'inert',
@@ -172,7 +179,7 @@ test('booking dialogs close with Escape and return focus to the listing', async 
     'inert',
     false,
   );
-  await expect(open).toBeFocused();
+  await expect(book).toBeFocused();
 });
 
 test('price filters and price sorting match the listed service prices', async ({
@@ -244,6 +251,10 @@ test('a partner can create a persistent demo studio and book its service', async
   await expect(studio).toHaveCount(1);
   await studio
     .getByRole('button', { name: `View ${studioName}`, exact: true })
+    .click();
+  await page
+    .getByTestId('listing-details')
+    .getByRole('button', { name: 'Choose a service & time', exact: true })
     .click();
   const booking = page.getByRole('dialog');
   await expect(booking.getByRole('radio')).toHaveCount(1);

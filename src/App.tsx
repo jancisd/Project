@@ -31,6 +31,7 @@ import type { Category, Listing } from './data';
 import type { Booking, View } from './types';
 import BookingDialog from './BookingDialog';
 import PartnerDialog from './PartnerDialog';
+import ListingDetails from './ListingDetails';
 import { getListingCoordinates } from './geography';
 import {
   readStored,
@@ -163,6 +164,15 @@ function ListingCard({
       data-testid="listing-card"
       data-listing-id={listing.id}
       data-starting-price={price}
+      onClick={(event) => {
+        if (
+          event.target instanceof Element &&
+          !event.target.closest(
+            'button, a, input, select, textarea, [role="button"]',
+          )
+        )
+          onOpen();
+      }}
       onMouseEnter={() => onHighlight?.(true)}
       onMouseLeave={() => onHighlight?.(false)}
       onFocus={() => onHighlight?.(true)}
@@ -176,6 +186,7 @@ function ListingCard({
           className="listing-image-button"
           onClick={onOpen}
           aria-label={`View ${listing.name}`}
+          data-listing-action="view"
         >
           <img
             className="listing-image"
@@ -210,7 +221,9 @@ function ListingCard({
         </span>
       </div>
       <h3>
-        <button onClick={onOpen}>{listing.name}</button>
+        <button onClick={onOpen} data-listing-action="title">
+          {listing.name}
+        </button>
       </h3>
       <div className="listing-address">
         <p className="listing-neighborhood">{listing.neighborhood}</p>
@@ -232,6 +245,7 @@ function ListingCard({
         <button
           className="card-arrow"
           aria-label={`Explore ${listing.name}`}
+          data-listing-action="explore"
           onClick={onOpen}
         >
           <ArrowRight size={18} />
@@ -289,6 +303,7 @@ function App() {
     () => window.matchMedia('(min-width: 901px)').matches,
   );
   const [mapSelectedId, setMapSelectedId] = useState<string | null>(null);
+  const [detailsId, setDetailsId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [mapArea, setMapArea] = useState<MapArea | null>(null);
   const [saved, setSaved] = useState<string[]>(() =>
@@ -302,6 +317,38 @@ function App() {
   );
   const resultsRef = useRef<HTMLElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
+  const discoveryLayoutRef = useRef<HTMLDivElement>(null);
+  const detailsReturnRef = useRef({
+    view: 'explore' as View,
+    mapVisible: false,
+    scrollY: 0,
+    listingId: '',
+    action: 'view',
+  });
+  const restoreDetailsFocus = useRef(false);
+
+  useEffect(() => {
+    if (
+      detailsId ||
+      !restoreDetailsFocus.current ||
+      view !== detailsReturnRef.current.view
+    )
+      return;
+    const frame = requestAnimationFrame(() => {
+      const context = detailsReturnRef.current;
+      const card = document.querySelector(
+        `[data-testid="listing-card"][data-listing-id="${CSS.escape(context.listingId)}"]`,
+      );
+      const target =
+        card?.querySelector<HTMLButtonElement>(
+          `[data-listing-action="${context.action}"]`,
+        ) ?? document.querySelector<HTMLButtonElement>('main button');
+      window.scrollTo({ top: context.scrollY, behavior: 'instant' });
+      target?.focus({ preventScroll: true });
+      restoreDetailsFocus.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [detailsId, view, mapVisible]);
 
   useEffect(() => {
     if (toast) {
@@ -327,6 +374,9 @@ function App() {
   const allListings = useMemo(
     () => [...localListings, ...demoListings],
     [localListings],
+  );
+  const detailsListing = allListings.find(
+    (listing) => listing.id === detailsId,
   );
   const matchingListings = useMemo(() => {
     let items = allListings.filter((listing) => {
@@ -366,6 +416,14 @@ function App() {
       items = [...items].sort((a, b) => b.rating - a.rating);
     return items;
   }, [allListings, category, search, maxPrice, highlyRated, sort, view, saved]);
+  const mapListings = useMemo(
+    () =>
+      detailsListing &&
+      !matchingListings.some((listing) => listing.id === detailsListing.id)
+        ? [...matchingListings, detailsListing]
+        : matchingListings,
+    [matchingListings, detailsListing],
+  );
   const visibleListings = useMemo(() => {
     if (view !== 'explore' || !mapArea) return matchingListings;
     const span = mapArea.east - mapArea.west;
@@ -393,11 +451,15 @@ function App() {
   ).length;
 
   const goTo = (next: View) => {
+    setDetailsId(null);
+    setMapSelectedId(null);
+    restoreDetailsFocus.current = false;
     setView(next);
     setMobileMenu(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const clearFilters = () => {
+    setDetailsId(null);
     setCategory('All');
     setQuery('');
     setLocation('');
@@ -425,6 +487,7 @@ function App() {
     setSearch({ location, query: query.trim() });
     setMapArea(null);
     setMapSelectedId(null);
+    setDetailsId(null);
     setView('explore');
     setTimeout(
       () =>
@@ -449,6 +512,42 @@ function App() {
         50,
       );
     }
+  };
+
+  const openListingDetails = (listing: Listing) => {
+    if (!detailsId) {
+      const action = document.activeElement?.getAttribute(
+        'data-listing-action',
+      );
+      detailsReturnRef.current = {
+        view,
+        mapVisible,
+        scrollY: window.scrollY,
+        listingId: listing.id,
+        action: action === 'title' || action === 'explore' ? action : 'view',
+      };
+    }
+    restoreDetailsFocus.current = false;
+    setView('explore');
+    setMapVisible(true);
+    setMapSelectedId(listing.id);
+    setDetailsId(listing.id);
+    setHighlightedId(null);
+    requestAnimationFrame(() =>
+      discoveryLayoutRef.current?.scrollIntoView({
+        behavior: 'instant',
+        block: 'start',
+      }),
+    );
+  };
+
+  const closeListingDetails = () => {
+    restoreDetailsFocus.current = true;
+    setDetailsId(null);
+    setMapSelectedId(null);
+    setHighlightedId(null);
+    setView(detailsReturnRef.current.view);
+    setMapVisible(detailsReturnRef.current.mapVisible);
   };
 
   return (
@@ -598,7 +697,7 @@ function App() {
 
         {view === 'explore' && (
           <section
-            className={`discovery-section page-width ${mapVisible ? 'is-map-visible' : 'is-list-only'}`}
+            className={`discovery-section page-width ${mapVisible ? 'is-map-visible' : 'is-list-only'}${detailsListing ? ' has-listing-details' : ''}`}
             id="experiences"
             aria-label="Discover beauty experiences"
             ref={resultsRef}
@@ -616,7 +715,11 @@ function App() {
                       key={cat}
                       className={`category-tab ${category === cat ? 'category-active' : ''}`}
                       aria-pressed={category === cat}
-                      onClick={() => setCategory(cat)}
+                      onClick={() => {
+                        setCategory(cat);
+                        setDetailsId(null);
+                        setMapSelectedId(null);
+                      }}
                     >
                       <Icon size={21} strokeWidth={1.5} />
                       <span>{cat === 'All' ? 'All experiences' : cat}</span>
@@ -682,9 +785,11 @@ function App() {
                 </label>
                 <button
                   className="view-toggle"
-                  onClick={() =>
-                    mapVisible ? setMapVisible(false) : openMap()
-                  }
+                  onClick={() => {
+                    setDetailsId(null);
+                    setMapSelectedId(null);
+                    mapVisible ? setMapVisible(false) : openMap();
+                  }}
                   aria-pressed={mapVisible}
                 >
                   {mapVisible ? <List size={16} /> : <MapIcon size={16} />}
@@ -706,46 +811,58 @@ function App() {
                 </button>
               </div>
             ) : null}
-            <div className="discovery-layout">
+            <div className="discovery-layout" ref={discoveryLayoutRef}>
               <div className="discovery-list">
-                {visibleListings.length ? (
-                  <div className="listing-grid discovery-listing-grid">
-                    {visibleListings.map((listing) => (
-                      <ListingCard
-                        key={listing.id}
-                        listing={listing}
-                        saved={saved.includes(listing.id)}
-                        onSave={() => toggleSave(listing.id)}
-                        onOpen={() => setSelected(listing)}
-                        onLocate={
-                          getListingCoordinates(listing)
-                            ? () => openMap(listing)
-                            : undefined
-                        }
-                        highlighted={
-                          highlightedId === listing.id ||
-                          mapSelectedId === listing.id
-                        }
-                        onHighlight={(active) =>
-                          setHighlightedId(active ? listing.id : null)
-                        }
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState
-                    icon={<Search size={29} />}
-                    title="Your perfect match is still out there."
-                    description="Try another service, location, or price range. A little reset can do wonders."
-                    action="Clear filters"
-                    onAction={clearFilters}
+                {detailsListing ? (
+                  <ListingDetails
+                    listing={detailsListing}
+                    saved={saved.includes(detailsListing.id)}
+                    onSave={() => toggleSave(detailsListing.id)}
+                    onClose={closeListingDetails}
+                    onBook={() => setSelected(detailsListing)}
                   />
+                ) : (
+                  <>
+                    {visibleListings.length ? (
+                      <div className="listing-grid discovery-listing-grid">
+                        {visibleListings.map((listing) => (
+                          <ListingCard
+                            key={listing.id}
+                            listing={listing}
+                            saved={saved.includes(listing.id)}
+                            onSave={() => toggleSave(listing.id)}
+                            onOpen={() => openListingDetails(listing)}
+                            onLocate={
+                              getListingCoordinates(listing)
+                                ? () => openMap(listing)
+                                : undefined
+                            }
+                            highlighted={
+                              highlightedId === listing.id ||
+                              mapSelectedId === listing.id
+                            }
+                            onHighlight={(active) =>
+                              setHighlightedId(active ? listing.id : null)
+                            }
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        icon={<Search size={29} />}
+                        title="Your perfect match is still out there."
+                        description="Try another service, location, or price range. A little reset can do wonders."
+                        action="Clear filters"
+                        onAction={clearFilters}
+                      />
+                    )}
+                    <p className="end-of-list">
+                      <span />A little local love goes a long way.
+                      <Flower2 size={18} />
+                      <span />
+                    </p>
+                  </>
                 )}
-                <p className="end-of-list">
-                  <span />A little local love goes a long way.
-                  <Flower2 size={18} />
-                  <span />
-                </p>
               </div>
               {mapVisible && (
                 <div
@@ -762,16 +879,21 @@ function App() {
                     }
                   >
                     <DiscoverMap
-                      listings={matchingListings}
+                      listings={mapListings}
                       selectedId={mapSelectedId}
                       highlightedId={highlightedId}
-                      onSelect={setMapSelectedId}
+                      onSelect={(id) => {
+                        setMapSelectedId(id);
+                        if (detailsId) setDetailsId(id);
+                      }}
+                      hideSelectedPreview={Boolean(detailsListing)}
                       onBook={setSelected}
                       onSave={toggleSave}
                       saved={saved}
                       onSearchArea={(bounds) => {
                         setMapArea(bounds);
                         setMapSelectedId(null);
+                        setDetailsId(null);
                       }}
                       onClearArea={() => setMapArea(null)}
                       areaActive={Boolean(mapArea)}
@@ -804,7 +926,7 @@ function App() {
                     listing={listing}
                     saved
                     onSave={() => toggleSave(listing.id)}
-                    onOpen={() => setSelected(listing)}
+                    onOpen={() => openListingDetails(listing)}
                   />
                 ))}
               </div>
@@ -1032,6 +1154,8 @@ function App() {
               onClick={() => {
                 setMaxPrice(draftPrice);
                 setHighlyRated(draftRating);
+                setDetailsId(null);
+                setMapSelectedId(null);
                 setFiltersOpen(false);
               }}
             >

@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { listings as demoListings } from './data';
 import type { Listing } from './data';
 import type { Booking } from './types';
+import { getSignInErrorMessage } from './auth-errors';
 import {
   isBookingArray,
   isListingArray,
@@ -297,10 +298,7 @@ export default function useMarketplace() {
         emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
       },
     });
-    if (error)
-      throw new Error(
-        'We couldn’t send the sign-in link. Please check the email and try again shortly.',
-      );
+    if (error) throw new Error(getSignInErrorMessage(error));
   }
 
   async function signOut() {

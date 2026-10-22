@@ -50,6 +50,29 @@ For local use, copy `.env.example` to `.env.local`, replace its placeholders
 with your project URL and public key, and restart Vite. `.env.local` is ignored
 by Git. Do not copy the placeholder values into a live deployment.
 
+## If a sign-in email fails
+
+The default Supabase sender only delivers to email addresses belonging to your
+Supabase **organization team**. To test before configuring email delivery, use
+your Supabase account's email address. Adding an address under Authentication
+→ Users does not make it an approved recipient for the default sender.
+
+For public sign-ups, configure a custom email provider in **Authentication →
+SMTP Settings**. Follow the provider's sender/domain verification instructions,
+enter its SMTP settings directly in Supabase, and test delivery there. SMTP
+passwords and API secrets belong in Supabase's SMTP settings, never in the Vite
+frontend or Netlify's `VITE_` variables. See [Supabase's SMTP guide](https://supabase.com/docs/guides/auth/auth-smtp).
+
+The sign-in form distinguishes restricted recipients, email request limits,
+disabled email sign-in, connection settings, and delivery/network failures.
+If a request is rate limited, allow time before requesting another link rather
+than repeatedly clicking Send. For an unrecognized failure, inspect the latest
+Auth error in Supabase's project logs.
+
+`VITE_SUPABASE_URL` should be the project origin ending in `.supabase.co`, or
+your configured custom domain. The app also accepts the Data API panel's
+`/rest/v1/` URL and normalizes it to the project origin before making requests.
+
 ## Data and access rules
 
 - Everyone can read published listings and their services. Signed-in users can

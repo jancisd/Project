@@ -7,7 +7,7 @@ const chromiumExecutable =
 
 export default defineConfig({
   testDir: './tests',
-  testIgnore: 'database.spec.ts',
+  testIgnore: ['database.spec.ts', 'signin-errors.spec.ts'],
   outputDir: 'test-results/demo',
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),

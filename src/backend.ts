@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Listing } from './data';
 import type { Booking } from './types';
 import { isBookingArray, isListingArray } from './storage';
+import { normalizeProjectUrl } from './backend-config';
 
 export type BusySlot = { time: string; duration: number };
 
@@ -16,17 +17,7 @@ function configurationError() {
   if (!projectUrl || !publicKey)
     return 'The database connection is incomplete. Please contact the site owner.';
   try {
-    const url = new URL(projectUrl);
-    if (
-      url.username ||
-      url.password ||
-      (url.protocol !== 'https:' &&
-        !(
-          url.protocol === 'http:' &&
-          ['localhost', '127.0.0.1'].includes(url.hostname)
-        ))
-    )
-      throw new Error();
+    normalizeProjectUrl(projectUrl);
     if (publicKey.startsWith('sb_secret_')) throw new Error();
     if (publicKey.startsWith('eyJ')) {
       const payload = JSON.parse(
@@ -44,7 +35,7 @@ export const backendError = configurationError();
 export const cloudEnabled = Boolean(projectUrl || publicKey);
 export const supabase =
   cloudEnabled && !backendError
-    ? createClient(projectUrl, publicKey, {
+    ? createClient(normalizeProjectUrl(projectUrl), publicKey, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,

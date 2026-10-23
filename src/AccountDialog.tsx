@@ -2,15 +2,19 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, LogOut, Mail, UserRound, X } from 'lucide-react';
 import './account.css';
 
+export type AccountMode = 'login' | 'signup';
+
 type Props = {
   email?: string;
+  initialMode?: AccountMode;
   onClose: () => void;
-  onSendLink: (email: string) => Promise<void>;
+  onSendLink: (email: string, mode: AccountMode) => Promise<void>;
   onSignOut: () => Promise<void>;
 };
 
 export default function AccountDialog({
   email,
+  initialMode = 'login',
   onClose,
   onSendLink,
   onSignOut,
@@ -18,11 +22,20 @@ export default function AccountDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const emailId = useId();
+  const modeId = useId();
+  const [mode, setMode] = useState<AccountMode>(initialMode);
   const [address, setAddress] = useState('');
   const [pending, setPending] = useState(false);
   const [sentTo, setSentTo] = useState('');
   const [error, setError] = useState('');
   const mounted = useRef(true);
+
+  function chooseMode(nextMode: AccountMode) {
+    if (pending || nextMode === mode) return;
+    setMode(nextMode);
+    setSentTo('');
+    setError('');
+  }
 
   useEffect(() => {
     mounted.current = true;
@@ -45,7 +58,7 @@ export default function AccountDialog({
     setError('');
     const submittedAddress = address.trim();
     try {
-      await onSendLink(submittedAddress);
+      await onSendLink(submittedAddress, mode);
       if (mounted.current) setSentTo(submittedAddress);
     } catch (cause) {
       if (mounted.current)
@@ -90,7 +103,11 @@ export default function AccountDialog({
     >
       <div className="dialog-heading">
         <h2 id={titleId}>
-          {email ? 'Your account.' : 'Make yourself at home.'}
+          {email
+            ? 'Your account.'
+            : mode === 'login'
+              ? 'Welcome back.'
+              : 'Make yourself at home.'}
         </h2>
         <button
           type="button"
@@ -101,6 +118,46 @@ export default function AccountDialog({
           <X size={21} />
         </button>
       </div>
+      {!email && (
+        <div
+          className="account-tabs"
+          role="tablist"
+          aria-label="Account access"
+        >
+          {(['login', 'signup'] as const).map((item, index) => (
+            <button
+              key={item}
+              id={`${modeId}-${item}`}
+              type="button"
+              role="tab"
+              aria-selected={mode === item}
+              aria-controls={`${modeId}-panel`}
+              tabIndex={mode === item ? 0 : -1}
+              disabled={pending}
+              onClick={() => chooseMode(item)}
+              onKeyDown={(event) => {
+                if (pending) return;
+                const next =
+                  event.key === 'Home'
+                    ? 'login'
+                    : event.key === 'End'
+                      ? 'signup'
+                      : ['ArrowLeft', 'ArrowRight'].includes(event.key)
+                        ? index === 0
+                          ? 'signup'
+                          : 'login'
+                        : null;
+                if (!next) return;
+                event.preventDefault();
+                chooseMode(next);
+                document.getElementById(`${modeId}-${next}`)?.focus();
+              }}
+            >
+              {item === 'login' ? 'Log in' : 'Create account'}
+            </button>
+          ))}
+        </div>
+      )}
       {email ? (
         <div className="account-details">
           <p className="dialog-intro">You’re signed in to airstethics.</p>
@@ -122,15 +179,27 @@ export default function AccountDialog({
           </button>
         </div>
       ) : sentTo ? (
-        <div className="account-sent" role="status">
+        <div
+          className="account-sent"
+          id={`${modeId}-panel`}
+          role="tabpanel"
+          aria-labelledby={`${modeId}-${mode}`}
+        >
           <span className="account-mail-icon" aria-hidden="true">
             <Mail size={26} />
           </span>
-          <h3>Check your email.</h3>
-          <p>
-            We sent a sign-in link to <strong>{sentTo}</strong>. Open it in this
-            browser to finish signing in.
-          </p>
+          <div role="status">
+            <h3>Check your email.</h3>
+            <p>
+              {mode === 'login'
+                ? 'We sent a login link to '
+                : 'We sent an account link to '}
+              <strong>{sentTo}</strong>. Open it in this browser to{' '}
+              {mode === 'login'
+                ? 'log in to your existing account.'
+                : 'finish joining airstethics.'}
+            </p>
+          </div>
           <p className="account-note">
             Can’t find it? Check your spam folder, or try again in a minute.
           </p>
@@ -146,9 +215,17 @@ export default function AccountDialog({
           </button>
         </div>
       ) : (
-        <form className="account-form" onSubmit={sendLink}>
+        <form
+          className="account-form"
+          id={`${modeId}-panel`}
+          role="tabpanel"
+          aria-labelledby={`${modeId}-${mode}`}
+          onSubmit={sendLink}
+        >
           <p className="dialog-intro">
-            Sign in to save your places and appointments across devices.
+            {mode === 'login'
+              ? 'Log in to your existing account to find your saved places and appointments.'
+              : 'Create an account to save your places and appointments across devices.'}
           </p>
           <label htmlFor={emailId}>Email address</label>
           <input
@@ -167,11 +244,17 @@ export default function AccountDialog({
             className="primary-button account-submit"
             disabled={pending}
           >
-            {pending ? 'Sending your link…' : 'Send sign-in link'}
+            {pending
+              ? 'Sending your link…'
+              : mode === 'login'
+                ? 'Send login link'
+                : 'Send sign-up link'}
             <ArrowRight size={17} />
           </button>
           <p className="account-note">
-            We’ll email you a secure sign-in link. No password to remember.
+            {mode === 'login'
+              ? 'Use the email you registered with. We’ll send a secure link to log in.'
+              : 'We’ll email you a secure link to create your account. No password to remember.'}
           </p>
         </form>
       )}

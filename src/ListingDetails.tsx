@@ -113,10 +113,7 @@ export default function ListingDetails({
 
       <div className="listing-details-gallery">
         <div className="listing-details-main-photo">
-          <img
-            src={activePhoto}
-            alt={`Sample ${listing.category.toLowerCase()} imagery for ${listing.name}`}
-          />
+          <img src={activePhoto} alt={`Photo of ${listing.name}`} />
           {gallery.length > 1 && (
             <span className="listing-details-photo-count">
               {gallery.indexOf(activePhoto) + 1} / {gallery.length}

@@ -18,7 +18,9 @@ docker run --detach --rm --name "$container" \
 
 ready=false
 for attempt in $(seq 1 60); do
-  if docker exec "$container" pg_isready -U postgres >/dev/null 2>&1; then
+  # The image's temporary initialization server accepts Unix-socket requests
+  # before it restarts. TCP becomes available only on the final server.
+  if docker exec "$container" pg_isready -U postgres --host 127.0.0.1 >/dev/null 2>&1; then
     ready=true
     break
   fi
@@ -40,6 +42,7 @@ for migration in supabase/migrations/*.sql; do
 done
 psql_in --quiet < supabase/seed.sql
 psql_in --quiet < supabase/tests/marketplace.sql
+psql_in --quiet < supabase/tests/storage-policies.sql
 
 # Separate concurrent transactions must contend for the same occupied range.
 # Exactly one may commit; an application-side availability check cannot provide
@@ -89,4 +92,4 @@ parallel_retry() {
 parallel_retry supabase/tests/concurrent-listing-retry.sql
 parallel_retry supabase/tests/concurrent-booking-retry.sql
 psql_in --quiet < supabase/tests/after-retries.sql
-echo 'Database policies, booking validation, idempotency, cancellation, and concurrent slot protection passed.'
+echo 'Database and photo storage policies, booking validation, idempotency, cancellation, and concurrent slot protection passed.'

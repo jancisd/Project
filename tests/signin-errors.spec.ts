@@ -110,11 +110,11 @@ for (const failure of failures) {
     });
 
     await page.goto('/');
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await page.getByRole('button', { name: 'Log in', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Email address', { exact: true }).fill(email);
     await dialog
-      .getByRole('button', { name: 'Send sign-in link', exact: true })
+      .getByRole('button', { name: 'Send login link', exact: true })
       .click();
     await expect(
       dialog.getByRole('button', { name: 'Sending your link…', exact: true }),
@@ -129,7 +129,7 @@ for (const failure of failures) {
       dialog.getByRole('heading', { name: 'Check your email.' }),
     ).toHaveCount(0);
     await expect(
-      dialog.getByRole('button', { name: 'Send sign-in link', exact: true }),
+      dialog.getByRole('button', { name: 'Send login link', exact: true }),
     ).toBeEnabled();
     await expect(
       dialog.getByLabel('Email address', { exact: true }),

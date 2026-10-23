@@ -11,9 +11,13 @@ connect a hosted project automatically.
    password in your own password manager.
 2. In the project's **SQL Editor**, run
    [`migrations/202610220001_marketplace.sql`](migrations/202610220001_marketplace.sql)
-   once. It creates listings, services, favourites, private bookings, policies,
-   and the booking functions. For an existing Supabase CLI workflow, apply it
-   with your normal migration process instead.
+   once, followed by
+   [`migrations/202610230001_listing_photos.sql`](migrations/202610230001_listing_photos.sql).
+   The first creates listings, services, favourites, private bookings, policies,
+   and booking functions. The second creates the public photo bucket and upload
+   permissions. **If the four app tables already exist, run only the new photo
+   migration.** For an existing Supabase CLI workflow, apply these through your
+   normal migration process instead.
 3. Optionally run [`seed.sql`](seed.sql) in the SQL Editor to populate the
    fictional Alberta studios from the demo. Skip this for an empty catalogue.
    These seeded businesses are marked as samples; their bookings do not notify
@@ -75,9 +79,23 @@ your configured custom domain. The app also accepts the Data API panel's
 
 ## Data and access rules
 
+The account dialog defaults to **Log in**, which sends an email link only for an
+existing account (`shouldCreateUser: false`). **Create account** is a separate
+choice that permits signup. Both use secure email links. Supabase restores the
+session across reloads until the user signs out or their session expires; a
+returning user does not need to register again.
+
 - Everyone can read published listings and their services. Signed-in users can
   publish a listing. New listings retain the confirmed map location and receive
   server-generated IDs; fabricated client ratings and reviews are discarded.
+- A listing can include up to 8 JPEG, PNG, or WebP photos, up to 5 MiB each.
+  The first photo is the cover; it can be changed or removed before publication.
+  The browser resizes and re-encodes uploads, removing camera metadata. Photos
+  are public in the `listing-photos` Storage bucket and are uploaded when the
+  user publishes. Upload permissions are limited to the signed-in user's UUID
+  folder; clients cannot overwrite another user's files or delete photos used
+  by a published listing. Failed uploads keep form details and can be retried.
+  A retry after a listing-save error reuses the existing uploaded URLs.
 - Favourites belong to their signed-in user. Booking names and email addresses
   are readable only by the customer who made the booking. The site owner can
   administer records using Supabase's privileged dashboard.
@@ -96,9 +114,16 @@ your configured custom domain. The app also accepts the Data API panel's
   authentication failures, and network/database errors are shown as errors;
   configured cloud mode never silently falls back to local storage.
 
+In demo mode, uploaded photos are compressed and saved in browser storage with
+the listing. A bounded gallery budget and storage-quota checks keep failed
+saves visible. Photos are never automatically uploaded when switching from
+demo mode to a connected project. Files left behind by abandoned or interrupted
+publication attempts may require periodic cleanup by the site owner; never
+delete an upload that might belong to an in-progress publication.
+
 The initial model reserves one appointment at a time per listing. Multiple
 staff calendars, provider appointment management, listing editing/moderation,
-photo uploads, payments, appointment email delivery, and self-service account
+payments, appointment email delivery, and self-service account
 deletion are later work. For account removal, the site owner must remove or
 reassign owned listings and their dependent records before deleting the user
 in Supabase Auth. Signing out does not delete database records.

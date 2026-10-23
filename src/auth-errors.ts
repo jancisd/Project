@@ -2,8 +2,13 @@ type SignInFailure = { code?: string; status?: number; message?: string };
 
 // Use fixed messages instead of displaying provider responses, which may
 // contain account details. These failures need different next steps.
-export function getSignInErrorMessage(error: SignInFailure): string {
+export function getSignInErrorMessage(
+  error: SignInFailure,
+  mode?: 'login' | 'signup',
+): string {
   const code = error.code;
+  if (mode === 'login' && code === 'otp_disabled')
+    return 'We couldn’t send a login link. If you’re new, choose Create account.';
   if (
     code === 'email_address_not_authorized' ||
     /email address not authorized|only.*(?:authorized|organisation|organization|team).*email|email.*(?:authorized|organisation|organization|team).*only/i.test(

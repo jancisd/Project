@@ -4,6 +4,8 @@ import { listings as demoListings } from './data';
 import type { Listing } from './data';
 import type { Booking } from './types';
 import { getSignInErrorMessage } from './auth-errors';
+import type { AccountMode } from './AccountDialog';
+import { demoPhotoSources, uploadListingPhotos } from './photo-upload';
 import {
   isBookingArray,
   isListingArray,
@@ -50,6 +52,7 @@ export default function useMarketplace() {
   });
   const mounted = useRef(true);
   const favoriteRequests = useRef(new Set<string>());
+  const photoUploads = useRef(new Map<string, Promise<string[]>>());
   const listingRevision = useRef(0);
   const accountRevision = useRef(0);
 
@@ -98,6 +101,7 @@ export default function useMarketplace() {
         setBookings([]);
         setAccountError('');
         setAccountLoading(Boolean(id));
+        photoUploads.current.clear();
       }
       setSession(nextSession);
       setAuthReady(true);
@@ -237,13 +241,48 @@ export default function useMarketplace() {
     }
   }
 
-  async function createListing(listing: Listing) {
+  async function createListing(listing: Listing, photos: File[] = []) {
     if (!cloudEnabled) {
-      setDemoLocalListings((previous) => [listing, ...previous]);
+      const sources = photos.length ? await demoPhotoSources(photos) : [];
+      const saved = sources.length
+        ? { ...listing, image: sources[0], images: sources }
+        : listing;
+      const next = [saved, ...demoLocalListings];
+      if (photos.length) {
+        try {
+          localStorage.setItem('airstethics:listings', JSON.stringify(next));
+        } catch {
+          throw new Error(
+            'Photos couldn’t be saved in this browser. Please try fewer or smaller photos.',
+          );
+        }
+      }
+      setDemoLocalListings(next);
       return;
     }
     const current = account();
-    const result = await publishListing(listing);
+    let sources: string[] = [];
+    if (photos.length) {
+      const key = `${current.generation}:${listing.id}`;
+      let request = photoUploads.current.get(key);
+      if (!request) {
+        request = uploadListingPhotos(current.id!, listing.id, photos, () =>
+          stillCurrent(current),
+        );
+        photoUploads.current.set(key, request);
+        void request.catch(() => {
+          if (photoUploads.current.get(key) === request)
+            photoUploads.current.delete(key);
+        });
+      }
+      sources = await request;
+    }
+    stillCurrent(current);
+    const result = await publishListing(
+      sources.length
+        ? { ...listing, image: sources[0], images: sources }
+        : listing,
+    );
     stillCurrent(current);
     listingRevision.current += 1;
     setListings((previous) => [
@@ -257,6 +296,18 @@ export default function useMarketplace() {
     serviceId: string,
   ): Promise<Booking> {
     if (!cloudEnabled) {
+      if (booking.listingImage.startsWith('data:')) {
+        try {
+          localStorage.setItem(
+            'airstethics:bookings',
+            JSON.stringify([booking, ...demoBookings]),
+          );
+        } catch {
+          throw new Error(
+            'This browser has no room to save the appointment. Clear some demo data and try again.',
+          );
+        }
+      }
       setDemoBookings((previous) => [booking, ...previous]);
       return booking;
     }
@@ -289,16 +340,17 @@ export default function useMarketplace() {
     );
   }
 
-  async function sendSignInLink(email: string) {
+  async function sendSignInLink(email: string, mode: AccountMode = 'login') {
     if (!supabase)
       throw new Error(backendError || 'The database is not connected.');
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
+        shouldCreateUser: mode === 'signup',
         emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
       },
     });
-    if (error) throw new Error(getSignInErrorMessage(error));
+    if (error) throw new Error(getSignInErrorMessage(error, mode));
   }
 
   async function signOut() {

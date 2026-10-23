@@ -108,6 +108,8 @@ async function mockDatabase(page: Page, signedIn = false) {
     bookingFailure: '' as '' | 'conflict' | 'offline',
     listingFailure: false,
     cancellationFailure: false,
+    authFailure: '',
+    authGate: null as Promise<void> | null,
     busy: [] as { booking_time: string; duration: number }[],
     availabilityGate: null as Promise<void> | null,
   };
@@ -142,7 +144,19 @@ async function mockDatabase(page: Page, signedIn = false) {
     if (path === '/auth/v1/user') return reply(session().user);
     if (path === '/auth/v1/token') return reply(session());
     if (path === '/auth/v1/logout') return route.fulfill({ status: 204 });
-    if (path === '/auth/v1/otp') return reply({});
+    if (path === '/auth/v1/otp') {
+      if (state.authGate) await state.authGate;
+      if (state.authFailure)
+        return reply(
+          {
+            code: state.authFailure,
+            error_code: state.authFailure,
+            message: 'This login request cannot be completed',
+          },
+          400,
+        );
+      return reply({});
+    }
     if (path === '/rest/v1/listings') {
       if (state.catalogFailure) return failure();
       const id = url.searchParams.get('id')?.replace(/^eq\./, '');
@@ -292,12 +306,12 @@ test('cloud browsing ignores old local demo data and asks for an account before 
     .getByRole('button', { name: 'Save Cloud Hair Studio', exact: true })
     .click();
   await expect(
-    page.getByRole('dialog').getByRole('button', { name: 'Send sign-in link' }),
+    page.getByRole('dialog').getByRole('button', { name: 'Send login link' }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Close account' }).click();
   await openPartner(page);
   await expect(
-    page.getByRole('dialog').getByRole('button', { name: 'Send sign-in link' }),
+    page.getByRole('dialog').getByRole('button', { name: 'Send login link' }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Close account' }).click();
   await page
@@ -314,14 +328,14 @@ test('cloud browsing ignores old local demo data and asks for an account before 
     .getByRole('button', { name: 'View & book', exact: true })
     .click();
   await expect(
-    page.getByRole('dialog').getByRole('button', { name: 'Send sign-in link' }),
+    page.getByRole('dialog').getByRole('button', { name: 'Send login link' }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Close account' }).click();
   const showList = page.getByRole('button', { name: 'Show list', exact: true });
   if (await showList.isVisible()) await showList.click();
   const dialog = await openBooking(page);
   await expect(
-    dialog.getByRole('button', { name: 'Send sign-in link' }),
+    dialog.getByRole('button', { name: 'Send login link' }),
   ).toBeVisible();
   expect(db.calls.filter((call) => call.method !== 'GET')).toEqual([]);
 });
@@ -332,11 +346,11 @@ test('email-link sign-in sends the submitted email and reports success only afte
   const db = await mockDatabase(page);
   await page.goto('/');
   await expect(page.getByTestId('listing-card')).toHaveCount(2);
-  await page.getByRole('button', { name: /^(?:Sign in|Account)$/i }).click();
+  await page.getByRole('button', { name: /^(?:Log in|Account)$/i }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Email address', { exact: true }).fill(email);
   await dialog
-    .getByRole('button', { name: 'Send sign-in link', exact: true })
+    .getByRole('button', { name: 'Send login link', exact: true })
     .click();
   await expect(
     dialog.getByRole('heading', { name: 'Check your email.' }),
@@ -344,6 +358,104 @@ test('email-link sign-in sends the submitted email and reports success only afte
   expect(
     db.calls.find((call) => call.path === '/auth/v1/otp')?.body?.email,
   ).toBe(email);
+  expect(
+    db.calls.find((call) => call.path === '/auth/v1/otp')?.body?.create_user,
+  ).toBe(false);
+});
+
+test('creating an account is an explicit choice and pending requests cannot switch modes', async ({
+  page,
+}) => {
+  const db = await mockDatabase(page);
+  let release = () => {};
+  db.authGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  const loginTab = dialog.getByRole('tab', { name: 'Log in', exact: true });
+  const signupTab = dialog.getByRole('tab', {
+    name: 'Create account',
+    exact: true,
+  });
+  await expect(loginTab).toHaveAttribute('aria-selected', 'true');
+  await dialog.getByLabel('Email address', { exact: true }).fill(email);
+  await signupTab.click();
+  await expect(signupTab).toHaveAttribute('aria-selected', 'true');
+  await expect(dialog.getByLabel('Email address', { exact: true })).toHaveValue(
+    email,
+  );
+  await dialog
+    .getByRole('button', { name: 'Send sign-up link', exact: true })
+    .click();
+  await expect(loginTab).toBeDisabled();
+  await expect(signupTab).toBeDisabled();
+  await expect(
+    dialog.getByLabel('Email address', { exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole('button', { name: 'Sending your link…', exact: true }),
+  ).toBeDisabled();
+  release();
+  await expect(
+    dialog.getByRole('heading', { name: 'Check your email.' }),
+  ).toBeVisible();
+  const requests = db.calls.filter((call) => call.path === '/auth/v1/otp');
+  expect(requests).toHaveLength(1);
+  expect(requests[0].body).toMatchObject({ email, create_user: true });
+  await loginTab.click();
+  await expect(
+    dialog.getByRole('heading', { name: 'Check your email.' }),
+  ).toHaveCount(0);
+  await expect(dialog.getByLabel('Email address', { exact: true })).toHaveValue(
+    email,
+  );
+  await expect(loginTab).toHaveAttribute('aria-selected', 'true');
+  expect(db.calls.filter((call) => call.path === '/auth/v1/otp')).toHaveLength(
+    1,
+  );
+});
+
+test('a rejected login never creates an account and switching to signup clears the old error', async ({
+  page,
+}) => {
+  const db = await mockDatabase(page);
+  db.authFailure = 'otp_disabled';
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Email address', { exact: true }).fill(email);
+  await dialog
+    .getByRole('button', { name: 'Send login link', exact: true })
+    .click();
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await expect(
+    dialog.getByRole('heading', { name: 'Check your email.' }),
+  ).toHaveCount(0);
+  let requests = db.calls.filter((call) => call.path === '/auth/v1/otp');
+  expect(requests).toHaveLength(1);
+  expect(requests[0].body).toMatchObject({ email, create_user: false });
+  await dialog
+    .getByRole('tab', { name: 'Create account', exact: true })
+    .click();
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await expect(dialog.getByLabel('Email address', { exact: true })).toHaveValue(
+    email,
+  );
+  expect(db.calls.filter((call) => call.path === '/auth/v1/otp')).toHaveLength(
+    1,
+  );
+  db.authFailure = '';
+  await dialog
+    .getByRole('button', { name: 'Send sign-up link', exact: true })
+    .click();
+  await expect(
+    dialog.getByRole('heading', { name: 'Check your email.' }),
+  ).toBeVisible();
+  requests = db.calls.filter((call) => call.path === '/auth/v1/otp');
+  expect(requests).toHaveLength(2);
+  expect(requests[1].body).toMatchObject({ email, create_user: true });
 });
 
 test('account data loads from the database, stays out of demo storage, and clears on sign-out', async ({
@@ -380,6 +492,9 @@ test('account data loads from the database, stays out of demo storage, and clear
     )?.body,
   ).toEqual({ user_id: userId, listing_id: cloudListings[0].id });
   await page.reload();
+  await expect(
+    page.getByRole('button', { name: 'Account', exact: true }),
+  ).toBeVisible();
   await navigate(page, 'Saved');
   await expect(page.getByTestId('listing-card')).toHaveCount(1);
   await navigate(page, 'My appointments');
@@ -396,6 +511,7 @@ test('account data loads from the database, stays out of demo storage, and clear
   expect(
     db.calls.find((call) => call.path === '/rest/v1/bookings')?.url,
   ).toContain(`customer_id=eq.${userId}`);
+  expect(db.calls.filter((call) => call.path === '/auth/v1/otp')).toEqual([]);
   await page
     .getByRole('button', { name: /^(?:Your account|Account)$/i })
     .click();

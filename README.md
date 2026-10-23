@@ -39,6 +39,10 @@ protection against overlapping bookings. Follow [the database setup guide](supab
 to apply the schema and connect your Netlify build using the project URL and
 public publishable key. A hosted Supabase project must be created separately.
 
+Already connected? Run the new [photo storage migration](supabase/migrations/202610230001_listing_photos.sql)
+once in Supabase's SQL Editor to enable listing uploads. The original four-table
+migration does not need to be run again.
+
 Without configuration, the demo below keeps working. Once configured, saves are
 confirmed by the database before the UI reports success. Connection failures
 show an error and Retry; they never silently store cloud actions in the browser.
@@ -56,6 +60,8 @@ Existing browser demo data is not uploaded automatically.
 - Book a service with a date, Alberta-local time, and sample contact details. Past times, appointments beyond 90 days, overlapping bookings, and appointments extending past closing are blocked.
 - View, persist, and cancel demo appointments. Cancelling releases the time slot.
 - Create a sample partner listing and book its service.
+- Add up to eight listing photos, preview them, choose a cover, and remove photos before publishing. Connected listings upload to Supabase Storage; demo photos stay in browser storage. Photos are optional, with sample images as a fallback.
+- Choose **Log in** for an existing account or **Create account** to register. Both use email links, and an existing session is restored after a reload.
 - Match a partner listing’s neighbourhood within its selected city and preview the pin before creating it. Shared names across cities use the selected city; ambiguous names require a choice. Unmatched neighbourhoods require a manually placed, confirmed pin, rather than a city-centre guess. Changing the city, neighbourhood, or manual coordinates clears the previous confirmation.
 - Use the responsive desktop or mobile interface and keyboard-accessible dialogs.
 
@@ -88,6 +94,7 @@ npx playwright install chromium
 - `src/storage.ts`: safe loading and validation of browser data
 - `src/backend.ts` and `src/useMarketplace.ts`: Supabase access, account state, and separate demo persistence
 - `src/AccountDialog.tsx`: email-link sign-in and sign-out
+- `src/ListingPhotoPicker.tsx`, `src/photo-files.ts`, and `src/photo-upload.ts`: photo selection, validation, compression, and uploads
 - `supabase/`: database migration, optional fictional seed, setup guide, and PostgreSQL access/concurrency checks
 - `src/styles.css` and `src/booking.css`: responsive design
 - `tests/marketplace.spec.ts`: browser workflow tests

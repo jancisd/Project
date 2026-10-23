@@ -57,6 +57,15 @@ export function isStringArray(value: unknown): value is string[] {
   return isArrayOf(value, (entry): entry is string => isText(entry, 2048));
 }
 
+function isImageSource(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (!value.startsWith('data:')) return isText(value, 2048);
+  return (
+    value.length <= 1100000 &&
+    /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
+  );
+}
+
 function isService(value: unknown): value is Service {
   return (
     isRecord(value) &&
@@ -94,8 +103,8 @@ function isListing(value: unknown): value is Listing {
         inRange(value.coordinates.lat, -90, 90) &&
         inRange(value.coordinates.lng, -180, 180))) &&
     isText(value.description, 10000) &&
-    isText(value.image, 2048) &&
-    isStringArray(value.images) &&
+    isImageSource(value.image) &&
+    isArrayOf(value.images, isImageSource, 100) &&
     value.images.length > 0 &&
     value.images.length <= 100 &&
     inRange(value.rating, 0, 5) &&
@@ -120,7 +129,7 @@ function isBooking(value: unknown): value is Booking {
     isText(value.id, 256) &&
     isText(value.listingId, 256) &&
     isText(value.listingName, 200) &&
-    isText(value.listingImage, 2048) &&
+    isImageSource(value.listingImage) &&
     isText(value.city, 200) &&
     isText(value.serviceName, 200) &&
     isDate(value.date) &&

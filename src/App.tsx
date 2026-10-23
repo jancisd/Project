@@ -612,7 +612,7 @@ function App() {
                 className="account-button"
                 onClick={() => setAccountOpen(true)}
               >
-                {session ? 'Account' : 'Sign in'}
+                {session ? 'Account' : 'Log in'}
               </button>
             )}
             <button
@@ -996,7 +996,7 @@ function App() {
                 className="primary-button"
                 onClick={() => setAccountOpen(true)}
               >
-                Sign in to see your appointments
+                Log in to see your appointments
               </button>
             )}
             {bookings.length ? (
@@ -1205,8 +1205,8 @@ function App() {
         <PartnerDialog
           cloud={cloud}
           onClose={() => setPartnerOpen(false)}
-          onCreate={async (listing) => {
-            await marketplace.createListing(listing);
+          onCreate={async (listing, photos) => {
+            await marketplace.createListing(listing, photos);
             clearFilters();
             setView('explore');
             setPartnerOpen(false);
@@ -1303,9 +1303,9 @@ function App() {
           ) : cloud ? (
             <div className="info-copy">
               <p>
-                Listings are shared publicly. Your saved places, appointment
-                details, name, and email are stored in your account and are
-                private to you.
+                Listings and listing photos are shared publicly. Your saved
+                places, appointment details, name, and email are stored in your
+                account and are private to you.
               </p>
               <p>
                 This early release does not collect payments or send appointment

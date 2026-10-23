@@ -5,6 +5,8 @@ import { categories } from './data';
 import type { Category, Listing } from './data';
 import type { Coordinates } from './geography';
 import { isWithinCityArea, resolveNeighbourhood } from './neighbourhoods';
+import ListingPhotoPicker from './ListingPhotoPicker';
+import type { SelectedListingPhoto } from './photo-files';
 import './partner-location.css';
 
 const LocationPicker = lazy(() => import('./LocationPicker'));
@@ -24,7 +26,7 @@ export default function PartnerDialog({
   cloud = false,
 }: {
   onClose: () => void;
-  onCreate: (listing: Listing) => void | Promise<void>;
+  onCreate: (listing: Listing, photos: File[]) => void | Promise<void>;
   cloud?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -39,6 +41,8 @@ export default function PartnerDialog({
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState('');
   const [pending, setPending] = useState(false);
+  const [photos, setPhotos] = useState<SelectedListingPhoto[]>([]);
+  const [checkingPhotos, setCheckingPhotos] = useState(false);
   const submitting = useRef(false);
   const mounted = useRef(true);
   const attempt = useRef<{ signature: string; id: string } | null>(null);
@@ -79,6 +83,10 @@ export default function PartnerDialog({
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (submitting.current) return;
+    if (checkingPhotos) {
+      setFormError('Please wait while we check your photos.');
+      return;
+    }
     if (
       name.trim().length < 2 ||
       professional.trim().length < 2 ||
@@ -121,6 +129,7 @@ export default function PartnerDialog({
       serviceName.trim(),
       price,
       duration,
+      photos.map((photo) => photo.id),
     ]);
     if (attempt.current?.signature !== signature)
       attempt.current = { signature, id: `local-${crypto.randomUUID()}` };
@@ -160,7 +169,10 @@ export default function PartnerDialog({
     setPending(true);
     setFormError('');
     try {
-      await onCreate(listing);
+      await onCreate(
+        listing,
+        photos.map((photo) => photo.file),
+      );
     } catch (reason) {
       if (mounted.current)
         setFormError(
@@ -215,7 +227,10 @@ export default function PartnerDialog({
         the name isn’t clear, we’ll ask you to choose or confirm a location.
       </p>
       <form className="partner-form" onSubmit={submit} aria-busy={pending}>
-        <fieldset className="partner-controls" disabled={pending}>
+        <fieldset
+          className="partner-controls"
+          disabled={pending || checkingPhotos}
+        >
           <label>
             Your space’s name
             <input
@@ -509,15 +524,26 @@ export default function PartnerDialog({
               </select>
             </label>
           </div>
-          <p className="partner-image-note">
-            We’ll use a sample {category.toLowerCase()} photo for your preview.
-          </p>
+          <ListingPhotoPicker
+            photos={photos}
+            onChange={(next) => {
+              setPhotos(next);
+              setFormError('');
+            }}
+            onCheckingChange={setCheckingPhotos}
+            cloud={cloud}
+            disabled={pending}
+          />
           {formError && (
             <p className="partner-error" role="alert">
               {formError}
             </p>
           )}
-          <button className="primary-button" type="submit" disabled={pending}>
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={pending || checkingPhotos}
+          >
             {pending
               ? 'Saving your space…'
               : cloud

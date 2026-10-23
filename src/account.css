@@ -57,6 +57,34 @@
   padding-top: 3px;
 }
 
+.account-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin: 20px 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f0f1e9;
+}
+
+.account-tabs button {
+  min-height: 42px;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.account-tabs button[aria-selected='true'] {
+  background: #fffefa;
+  box-shadow: 0 1px 4px #233a3112;
+}
+
+.account-tabs button:disabled {
+  opacity: 0.65;
+}
+
 .account-form {
   display: grid;
   gap: 13px;
@@ -145,6 +173,7 @@
   font-size: 30px;
   font-weight: 500;
   line-height: 1.1;
+  margin-bottom: 14px;
 }
 
 .account-sent .text-button {

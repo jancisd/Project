@@ -7,7 +7,11 @@ const chromiumExecutable =
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['database.spec.ts', 'signin-errors.spec.ts'],
+  testMatch: [
+    'database.spec.ts',
+    'signin-errors.spec.ts',
+    'photo-upload.spec.ts',
+  ],
   outputDir: 'test-results/cloud',
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),

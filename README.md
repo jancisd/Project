@@ -33,15 +33,17 @@ No environment variables or API keys are required for demo mode. Later pushes to
 
 ## Connect a shared database
 
-The Supabase integration adds email-link accounts, public listings and services,
+The Supabase integration adds password accounts with optional authenticator
+verification, public listings and services,
 private favourites and appointments, shared availability, and database-enforced
 protection against overlapping bookings. Follow [the database setup guide](supabase/README.md)
 to apply the schema and connect your Netlify build using the project URL and
 public publishable key. A hosted Supabase project must be created separately.
 
-Already connected? Run the new [photo storage migration](supabase/migrations/202610230001_listing_photos.sql)
-once in Supabase's SQL Editor to enable listing uploads. The original four-table
-migration does not need to be run again.
+Already connected? The photo storage and account security migrations follow the
+original four-table migration. Let your configured GitHub/CLI workflow apply
+new files in order. For a manual setup, follow the database guide; do not rerun
+the original migration.
 
 If a Supabase GitHub deployment reports `relation "listings" already exists`
 after a manual setup, use the [migration history recovery guide](supabase/repairs/README.md)
@@ -65,7 +67,8 @@ Existing browser demo data is not uploaded automatically.
 - View, persist, and cancel demo appointments. Cancelling releases the time slot.
 - Create a sample partner listing and book its service.
 - Add up to eight listing photos, preview them, choose a cover, and remove photos before publishing. Connected listings upload to Supabase Storage; demo photos stay in browser storage. Photos are optional, with sample images as a fallback.
-- Choose **Log in** for an existing account or **Create account** to register. Both use email links, and an existing session is restored after a reload.
+- Log in with email and password, or choose **Create account** to register. Returning sessions survive a reload. Existing email-link users can set a password through **Forgot password** or their account settings; email-link login remains available.
+- Add an optional authenticator app in **Account**. A verified code is required on subsequent logins before accessing private account data or publishing, saving, or booking.
 - Match a partner listing’s neighbourhood within its selected city and preview the pin before creating it. Shared names across cities use the selected city; ambiguous names require a choice. Unmatched neighbourhoods require a manually placed, confirmed pin, rather than a city-centre guess. Changing the city, neighbourhood, or manual coordinates clears the previous confirmation.
 - Use the responsive desktop or mobile interface and keyboard-accessible dialogs.
 
@@ -97,7 +100,7 @@ npx playwright install chromium
 - `src/types.ts`: shared booking and navigation types
 - `src/storage.ts`: safe loading and validation of browser data
 - `src/backend.ts` and `src/useMarketplace.ts`: Supabase access, account state, and separate demo persistence
-- `src/AccountDialog.tsx`: email-link sign-in and sign-out
+- `src/AccountDialog.tsx`, `src/account-service.ts`, and `src/account.css`: password login, recovery, authenticator setup, and sign-out
 - `src/ListingPhotoPicker.tsx`, `src/photo-files.ts`, and `src/photo-upload.ts`: photo selection, validation, compression, and uploads
 - `supabase/`: database migration, optional fictional seed, setup guide, and PostgreSQL access/concurrency checks
 - `src/styles.css` and `src/booking.css`: responsive design

@@ -192,3 +192,129 @@
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
+
+.account-outline-button {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.account-outline-button:hover {
+  background: var(--cream);
+}
+
+.account-outline-button:disabled {
+  opacity: 0.6;
+}
+
+.account-secondary,
+.account-forgot {
+  justify-self: start;
+  text-align: left;
+  font-size: 12px;
+}
+
+.account-forgot {
+  justify-self: end;
+}
+
+.account-security {
+  display: grid;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.account-security h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.account-security h4 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.account-security-status {
+  display: grid;
+  gap: 10px;
+}
+
+.account-security-status .text-button {
+  justify-self: start;
+  font-size: 12px;
+}
+
+.account-qr {
+  display: block;
+  justify-self: center;
+  max-width: 100%;
+  height: auto;
+  padding: 10px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.account-setup-key {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.account-setup-key summary {
+  cursor: pointer;
+}
+
+.account-setup-key code {
+  display: block;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--cream);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.account-form .account-code {
+  letter-spacing: 0.35em;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-form select {
+  max-width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffefa;
+  color: var(--pine);
+}
+
+.account-success {
+  padding: 11px 13px;
+  border-radius: 8px;
+  background: #e8ecdf;
+  color: var(--pine);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.account-factor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.account-factor .text-button {
+  font-size: 12px;
+}

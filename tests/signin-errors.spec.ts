@@ -112,6 +112,9 @@ for (const failure of failures) {
     await page.goto('/');
     await page.getByRole('button', { name: 'Log in', exact: true }).click();
     const dialog = page.getByRole('dialog');
+    await dialog
+      .getByRole('button', { name: 'Use an email link instead', exact: true })
+      .click();
     await dialog.getByLabel('Email address', { exact: true }).fill(email);
     await dialog
       .getByRole('button', { name: 'Send login link', exact: true })

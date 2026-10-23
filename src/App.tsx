@@ -36,6 +36,12 @@ import { getListingCoordinates } from './geography';
 import { fetchAvailability } from './backend';
 import useMarketplace from './useMarketplace';
 import AccountDialog from './AccountDialog';
+import {
+  logInWithPassword,
+  createPasswordAccount,
+  sendPasswordReset,
+  setAccountPassword,
+} from './account-service';
 
 const cities = ['Edmonton', 'Calgary', 'Canmore'];
 const DiscoverMap = lazy(() => import('./DiscoverMap'));
@@ -289,6 +295,7 @@ function App() {
     bookings,
   } = marketplace;
   const [accountOpen, setAccountOpen] = useState(false);
+  const promptedChallenge = useRef<string | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelError, setCancelError] = useState('');
   const [view, setView] = useState<View>('explore');
@@ -362,6 +369,20 @@ function App() {
     setCancelId(null);
     setCancelError('');
   }, [session?.user.id]);
+  useEffect(() => {
+    if (marketplace.recovery) setAccountOpen(true);
+  }, [marketplace.recovery]);
+  useEffect(() => {
+    if (!session) promptedChallenge.current = null;
+    if (
+      marketplace.security?.needsChallenge &&
+      session &&
+      promptedChallenge.current !== session.access_token
+    ) {
+      promptedChallenge.current = session.access_token;
+      setAccountOpen(true);
+    }
+  }, [session, marketplace.security?.needsChallenge]);
   const detailsListing = allListings.find(
     (listing) => listing.id === detailsId,
   );
@@ -459,7 +480,8 @@ function App() {
     setHighlightedId(null);
   };
   const needsAccount = () => {
-    if (!cloud || (authReady && session)) return false;
+    if (!cloud || (authReady && session && marketplace.accountReady))
+      return false;
     setAccountOpen(true);
     return true;
   };
@@ -1350,6 +1372,19 @@ function App() {
           onClose={() => setAccountOpen(false)}
           onSendLink={marketplace.sendSignInLink}
           onSignOut={marketplace.signOut}
+          onPasswordLogin={logInWithPassword}
+          onPasswordSignup={createPasswordAccount}
+          onRequestReset={sendPasswordReset}
+          onSetPassword={setAccountPassword}
+          recovery={marketplace.recovery}
+          onRecoveryDone={marketplace.finishRecovery}
+          security={marketplace.security}
+          securityLoading={marketplace.securityLoading}
+          securityError={marketplace.securityError}
+          onRetrySecurity={() => void marketplace.refreshSecurity()}
+          onEnroll={marketplace.startAuthenticator}
+          onVerify={marketplace.confirmAuthenticator}
+          onRemove={marketplace.deleteAuthenticator}
         />
       )}
       {toast && (

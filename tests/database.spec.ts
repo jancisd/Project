@@ -75,12 +75,13 @@ function session() {
     app_metadata: { provider: 'email', providers: ['email'] },
     user_metadata: {},
     identities: [],
+    factors: [],
     created_at: timestamp,
     updated_at: timestamp,
     is_anonymous: false,
   };
   return {
-    access_token: `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: userId, aud: 'authenticated', role: 'authenticated', email, iat: now, exp: now + 3600 })}.test-signature`,
+    access_token: `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: userId, aud: 'authenticated', role: 'authenticated', email, aal: 'aal1', amr: [{ method: 'password', timestamp: now }], iat: now, exp: now + 3600 })}.test-signature`,
     refresh_token: 'test-refresh-token-only',
     expires_in: 3600,
     expires_at: now + 3600,
@@ -142,7 +143,21 @@ async function mockDatabase(page: Page, signedIn = false) {
       reply({ message, code, details: null, hint: null }, 400);
 
     if (path === '/auth/v1/user') return reply(session().user);
-    if (path === '/auth/v1/token') return reply(session());
+    if (path === '/auth/v1/token' || path === '/auth/v1/signup') {
+      if (state.authGate) await state.authGate;
+      if (state.authFailure)
+        return reply(
+          {
+            code: state.authFailure,
+            error_code: state.authFailure,
+            message: 'This login request cannot be completed',
+          },
+          400,
+        );
+      if (path === '/auth/v1/signup')
+        return reply({ user: session().user, session: null });
+      return reply(session());
+    }
     if (path === '/auth/v1/logout') return route.fulfill({ status: 204 });
     if (path === '/auth/v1/otp') {
       if (state.authGate) await state.authGate;
@@ -306,12 +321,16 @@ test('cloud browsing ignores old local demo data and asks for an account before 
     .getByRole('button', { name: 'Save Cloud Hair Studio', exact: true })
     .click();
   await expect(
-    page.getByRole('dialog').getByRole('button', { name: 'Send login link' }),
+    page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Log in', exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Close account' }).click();
   await openPartner(page);
   await expect(
-    page.getByRole('dialog').getByRole('button', { name: 'Send login link' }),
+    page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Log in', exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Close account' }).click();
   await page
@@ -328,14 +347,16 @@ test('cloud browsing ignores old local demo data and asks for an account before 
     .getByRole('button', { name: 'View & book', exact: true })
     .click();
   await expect(
-    page.getByRole('dialog').getByRole('button', { name: 'Send login link' }),
+    page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Log in', exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Close account' }).click();
   const showList = page.getByRole('button', { name: 'Show list', exact: true });
   if (await showList.isVisible()) await showList.click();
   const dialog = await openBooking(page);
   await expect(
-    dialog.getByRole('button', { name: 'Send login link' }),
+    dialog.getByRole('button', { name: 'Log in', exact: true }),
   ).toBeVisible();
   expect(db.calls.filter((call) => call.method !== 'GET')).toEqual([]);
 });
@@ -348,6 +369,9 @@ test('email-link sign-in sends the submitted email and reports success only afte
   await expect(page.getByTestId('listing-card')).toHaveCount(2);
   await page.getByRole('button', { name: /^(?:Log in|Account)$/i }).click();
   const dialog = page.getByRole('dialog');
+  await dialog
+    .getByRole('button', { name: 'Use an email link instead', exact: true })
+    .click();
   await dialog.getByLabel('Email address', { exact: true }).fill(email);
   await dialog
     .getByRole('button', { name: 'Send login link', exact: true })
@@ -387,7 +411,13 @@ test('creating an account is an explicit choice and pending requests cannot swit
     email,
   );
   await dialog
-    .getByRole('button', { name: 'Send sign-up link', exact: true })
+    .getByLabel('Password', { exact: true })
+    .fill('test-account-password-2026');
+  await dialog
+    .getByLabel('Confirm password', { exact: true })
+    .fill('test-account-password-2026');
+  await dialog
+    .getByRole('button', { name: 'Create account', exact: true })
     .click();
   await expect(loginTab).toBeDisabled();
   await expect(signupTab).toBeDisabled();
@@ -395,15 +425,18 @@ test('creating an account is an explicit choice and pending requests cannot swit
     dialog.getByLabel('Email address', { exact: true }),
   ).toBeDisabled();
   await expect(
-    dialog.getByRole('button', { name: 'Sending your link…', exact: true }),
+    dialog.getByRole('button', { name: 'Creating account…', exact: true }),
   ).toBeDisabled();
   release();
   await expect(
     dialog.getByRole('heading', { name: 'Check your email.' }),
   ).toBeVisible();
-  const requests = db.calls.filter((call) => call.path === '/auth/v1/otp');
+  const requests = db.calls.filter((call) => call.path === '/auth/v1/signup');
   expect(requests).toHaveLength(1);
-  expect(requests[0].body).toMatchObject({ email, create_user: true });
+  expect(requests[0].body).toMatchObject({
+    email,
+    password: 'test-account-password-2026',
+  });
   await loginTab.click();
   await expect(
     dialog.getByRole('heading', { name: 'Check your email.' }),
@@ -412,30 +445,37 @@ test('creating an account is an explicit choice and pending requests cannot swit
     email,
   );
   await expect(loginTab).toHaveAttribute('aria-selected', 'true');
-  expect(db.calls.filter((call) => call.path === '/auth/v1/otp')).toHaveLength(
-    1,
-  );
+  expect(
+    db.calls.filter((call) => call.path === '/auth/v1/signup'),
+  ).toHaveLength(1);
 });
 
-test('a rejected login never creates an account and switching to signup clears the old error', async ({
+test('a rejected password login never creates an account and switching to signup clears the old error', async ({
   page,
 }) => {
   const db = await mockDatabase(page);
-  db.authFailure = 'otp_disabled';
+  db.authFailure = 'invalid_credentials';
   await page.goto('/');
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Email address', { exact: true }).fill(email);
   await dialog
-    .getByRole('button', { name: 'Send login link', exact: true })
-    .click();
+    .getByLabel('Password', { exact: true })
+    .fill('test-rejected-password-2026');
+  await dialog.getByRole('button', { name: 'Log in', exact: true }).click();
   await expect(dialog.getByRole('alert')).toBeVisible();
   await expect(
     dialog.getByRole('heading', { name: 'Check your email.' }),
   ).toHaveCount(0);
-  let requests = db.calls.filter((call) => call.path === '/auth/v1/otp');
+  const requests = db.calls.filter((call) => call.path === '/auth/v1/token');
   expect(requests).toHaveLength(1);
-  expect(requests[0].body).toMatchObject({ email, create_user: false });
+  expect(new URL(requests[0].url).searchParams.get('grant_type')).toBe(
+    'password',
+  );
+  expect(requests[0].body).toMatchObject({ email });
+  expect(
+    db.calls.filter((call) => call.path === '/auth/v1/signup'),
+  ).toHaveLength(0);
   await dialog
     .getByRole('tab', { name: 'Create account', exact: true })
     .click();
@@ -443,19 +483,26 @@ test('a rejected login never creates an account and switching to signup clears t
   await expect(dialog.getByLabel('Email address', { exact: true })).toHaveValue(
     email,
   );
-  expect(db.calls.filter((call) => call.path === '/auth/v1/otp')).toHaveLength(
-    1,
-  );
+  await expect(dialog.getByLabel('Password', { exact: true })).toHaveValue('');
   db.authFailure = '';
   await dialog
-    .getByRole('button', { name: 'Send sign-up link', exact: true })
+    .getByLabel('Password', { exact: true })
+    .fill('test-account-password-2026');
+  await dialog
+    .getByLabel('Confirm password', { exact: true })
+    .fill('test-account-password-2026');
+  await dialog
+    .getByRole('button', { name: 'Create account', exact: true })
     .click();
   await expect(
     dialog.getByRole('heading', { name: 'Check your email.' }),
   ).toBeVisible();
-  requests = db.calls.filter((call) => call.path === '/auth/v1/otp');
-  expect(requests).toHaveLength(2);
-  expect(requests[1].body).toMatchObject({ email, create_user: true });
+  const signups = db.calls.filter((call) => call.path === '/auth/v1/signup');
+  expect(signups).toHaveLength(1);
+  expect(signups[0].body).toMatchObject({ email });
+  expect(db.calls.filter((call) => call.path === '/auth/v1/otp')).toHaveLength(
+    0,
+  );
 });
 
 test('account data loads from the database, stays out of demo storage, and clears on sign-out', async ({

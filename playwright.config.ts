@@ -11,6 +11,8 @@ export default defineConfig({
     'database.spec.ts',
     'signin-errors.spec.ts',
     'photo-upload.spec.ts',
+    'password-auth.spec.ts',
+    'authenticator.spec.ts',
   ],
   outputDir: 'test-results/demo',
   fullyParallel: true,

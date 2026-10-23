@@ -1,6 +1,7 @@
 # Connect the database
 
-The app supports Supabase PostgreSQL and email-link accounts while remaining
+The app supports Supabase PostgreSQL, password accounts, and optional
+authenticator verification while remaining
 deployable as the existing browser demo. This repository does not provision or
 connect a hosted project automatically.
 
@@ -14,9 +15,11 @@ connect a hosted project automatically.
    the files in `migrations/` in filename order. For a SQL Editor-only setup,
    run [`migrations/202610220001_marketplace.sql`](migrations/202610220001_marketplace.sql)
    once, followed by
-   [`migrations/202610230001_listing_photos.sql`](migrations/202610230001_listing_photos.sql).
+   [`migrations/202610230001_listing_photos.sql`](migrations/202610230001_listing_photos.sql)
+   and [`migrations/202610230002_account_security.sql`](migrations/202610230002_account_security.sql).
    The first creates the four app tables and booking functions; the second
-   creates photo storage and permissions. **If the four app tables already
+   creates photo storage and permissions; the third enforces authenticator
+   verification for enrolled accounts. **If the four app tables already
    exist, do not rerun the initial setup.** Manual SQL does not record migration
    history automatically. Before enabling automatic deployments for an existing
    manual setup, follow the [migration history recovery guide](repairs/README.md).
@@ -27,11 +30,13 @@ connect a hosted project automatically.
 4. In **Authentication → URL Configuration**, set **Site URL** to your published
    Netlify address and add that exact URL to **Redirect URLs**. Include the
    trailing slash if your app is served at `/`. For local development, also
-   allow `http://localhost:5173/` or the exact local origin you use.
-5. Enable the Email authentication provider. The default magic-link email
-   template works with this app. Supabase's built-in email sender has recipient
+   allow `http://localhost:5173/` or the exact local origin you use. Add the
+   password recovery URL as well, for example
+   `https://airsthetic.netlify.app/?account=recovery` (and its local equivalent).
+5. Enable the Email authentication provider for email/password accounts. Keep
+   email confirmation enabled for new registrations. Supabase's built-in email sender has recipient
    restrictions and rate limits; configure custom SMTP before inviting public
-   users. Test a sign-in email with a real account you control.
+   users. Test confirmation and password-reset delivery with an account you control.
 6. In Supabase **Project Settings → API**, copy the **Project URL** and the
    **publishable key**. In Netlify **Project configuration → Environment
    variables**, add these for the builds you want connected:
@@ -79,13 +84,35 @@ Auth error in Supabase's project logs.
 your configured custom domain. The app also accepts the Data API panel's
 `/rest/v1/` URL and normalizes it to the project origin before making requests.
 
-## Data and access rules
+## Passwords and authenticator apps
 
-The account dialog defaults to **Log in**, which sends an email link only for an
-existing account (`shouldCreateUser: false`). **Create account** is a separate
-choice that permits signup. Both use secure email links. Supabase restores the
-session across reloads until the user signs out or their session expires; a
-returning user does not need to register again.
+**Log in** uses email and password without sending a new email on each login.
+**Create account** registers a password and asks for email confirmation when
+enabled in Supabase. The app requires at least eight characters for a new
+password; stronger password rules configured in Supabase also apply.
+
+Existing email-link users can use **Forgot password** to receive a reset link,
+or log in with **Use an email link instead** and set a password under **Account**.
+The fallback link cannot create a new account. Password recovery requires the
+valid session established by Supabase's recovery link; the URL flag alone does
+not authorize a password change. Supabase manages passwords, not app tables or
+browser demo storage. Sessions restore after reload until sign-out or expiry.
+
+In **Account**, choose **Enable authenticator**, scan the QR code in an app such
+as Google Authenticator, Microsoft Authenticator, or 1Password, then verify its
+six-digit code. Setup is not complete until verification succeeds. Cancelling
+removes the unfinished factor. Supabase enables TOTP by default; see its
+[authenticator guide](https://supabase.com/docs/guides/auth/auth-mfa/totp).
+
+After enrollment, each new password or email-link session requires a code before
+private favourites/bookings can load or account actions can proceed. The
+database enforces this as well as the UI. A verified session can remove the
+authenticator in **Account**. This initial version does not generate backup
+codes or provide automatic lost-device recovery; use an authenticator with
+secure backup and keep access to it. An account with a lost factor requires
+the site owner's identity-checked recovery process in Supabase.
+
+## Data and access rules
 
 - Everyone can read published listings and their services. Signed-in users can
   publish a listing. New listings retain the confirmed map location and receive
@@ -110,6 +137,10 @@ returning user does not need to register again.
 - Signed-out pages clear account data. Cloud booking/contact records are not
   written to the old browser demo keys. Supabase keeps a sign-in session in the
   browser so a reload can restore the account.
+- Enrolled accounts need a Supabase `aal2` session for private reads, favourites,
+  listing photo uploads/deletes, and booking/listing RPC mutations. Authenticator
+  codes and setup secrets are not saved in app storage. Public discovery,
+  listing photos, and anonymous availability remain available.
 - Existing local listings, saved places, and demo bookings stay separate. There
   is **no automatic upload or migration** of old contact details.
 - Missing both connection settings selects demo mode. Partial/invalid settings,

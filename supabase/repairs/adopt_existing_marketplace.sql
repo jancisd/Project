@@ -13,6 +13,7 @@ declare
   relation_oid oid;
   function_oid oid;
   policy_expression text;
+  policy_check_expression text;
 begin
   for expected in
     select * from (values
@@ -26,8 +27,43 @@ begin
     ) then
       raise exception 'Adoption stopped: public.% must exist with row-level security enabled. No migration history was changed.', expected.table_name;
     end if;
-    if (select count(*) from pg_policy where polrelid = relation_oid) <> expected.policy_count then
+    -- The optional account-security migration adds only these two named
+    -- restrictive policies. Validate them below before accepting the schema;
+    -- every other extra policy must still make adoption fail closed.
+    if (select count(*) from pg_policy where polrelid = relation_oid
+      and not (
+        (expected.table_name = 'favorites' and polname = 'favorites_require_account_assurance')
+        or (expected.table_name = 'bookings' and polname = 'bookings_require_account_assurance')
+      )) <> expected.policy_count then
       raise exception 'Adoption stopped: public.% has unexpected access policies. No migration history was changed.', expected.table_name;
+    end if;
+  end loop;
+
+  for expected in
+    select p.*, c.relname as table_name
+    from pg_policy p join pg_class c on c.oid = p.polrelid
+    where (p.polrelid = to_regclass('public.favorites') and p.polname = 'favorites_require_account_assurance')
+      or (p.polrelid = to_regclass('public.bookings') and p.polname = 'bookings_require_account_assurance')
+  loop
+    policy_expression := regexp_replace(pg_get_expr(expected.polqual, expected.polrelid), '[[:space:]]', '', 'g');
+    policy_check_expression := regexp_replace(pg_get_expr(expected.polwithcheck, expected.polrelid), '[[:space:]]', '', 'g');
+    if expected.polpermissive or expected.polcmd <> '*'
+      or expected.polroles <> array[(select oid from pg_roles where rolname = 'authenticated')]
+      or policy_expression is null or policy_check_expression is null
+      or policy_expression not in (
+        '(SELECTaccount_has_required_assurance()ASaccount_has_required_assurance)',
+        '(SELECTpublic.account_has_required_assurance()ASaccount_has_required_assurance)'
+      )
+      or policy_check_expression <> policy_expression
+      or not exists (
+        select 1 from pg_proc p
+        where p.oid = to_regprocedure('public.account_has_required_assurance()')
+          and p.prosecdef and p.provolatile = 's' and p.prorettype = 'boolean'::regtype
+          and coalesce(p.proconfig, array[]::text[]) && array['search_path=""', 'search_path=']
+          and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+          and not has_function_privilege('anon', p.oid, 'EXECUTE')
+      ) then
+      raise exception 'Adoption stopped: access policy % does not match the account security setup. No migration history was changed.', expected.polname;
     end if;
   end loop;
 

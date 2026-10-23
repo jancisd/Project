@@ -5,6 +5,13 @@ import type { Listing } from './data';
 import type { Booking } from './types';
 import { getSignInErrorMessage } from './auth-errors';
 import type { AccountMode } from './AccountDialog';
+import {
+  getAccountSecurity,
+  enrollAuthenticator,
+  verifyAuthenticator,
+  removeAuthenticator,
+} from './account-service';
+import type { AccountSecurity } from './account-service';
 import { demoPhotoSources, uploadListingPhotos } from './photo-upload';
 import {
   isBookingArray,
@@ -37,6 +44,10 @@ export default function useMarketplace() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(!cloudEnabled);
   const [authError, setAuthError] = useState('');
+  const [security, setSecurity] = useState<AccountSecurity | null>(null);
+  const [securityLoading, setSecurityLoading] = useState(false);
+  const [securityError, setSecurityError] = useState('');
+  const [recovery, setRecovery] = useState(false);
   const [listings, setListings] = useState<Listing[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -55,6 +66,9 @@ export default function useMarketplace() {
   const photoUploads = useRef(new Map<string, Promise<string[]>>());
   const listingRevision = useRef(0);
   const accountRevision = useRef(0);
+  const securityRevision = useRef(0);
+  const securityRef = useRef<AccountSecurity | null>(null);
+  const accessToken = useRef<string | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -88,7 +102,7 @@ export default function useMarketplace() {
     let receivedEvent = false;
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
       receivedEvent = true;
       const id = nextSession?.user.id ?? null;
@@ -102,7 +116,19 @@ export default function useMarketplace() {
         setAccountError('');
         setAccountLoading(Boolean(id));
         photoUploads.current.clear();
+        setRecovery(false);
       }
+      if (accessToken.current !== (nextSession?.access_token ?? null)) {
+        accessToken.current = nextSession?.access_token ?? null;
+        securityRevision.current += 1;
+        securityRef.current = null;
+        setSecurity(null);
+        setSecurityLoading(Boolean(id));
+        setSecurityError('');
+        setSaved([]);
+        setBookings([]);
+      }
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(nextSession);
       setAuthReady(true);
       setAuthError('');
@@ -120,6 +146,47 @@ export default function useMarketplace() {
       subscription.unsubscribe();
     };
   }, []);
+
+  const refreshSecurity = useCallback(async () => {
+    const current = { ...accountRef.current };
+    if (!current.id) return;
+    const revision = ++securityRevision.current;
+    securityRef.current = null;
+    setSecurity(null);
+    setSecurityLoading(true);
+    setSecurityError('');
+    setSaved([]);
+    setBookings([]);
+    setAccountLoading(false);
+    const isCurrent = () =>
+      mounted.current &&
+      revision === securityRevision.current &&
+      current.generation === accountRef.current.generation;
+    try {
+      const result = await getAccountSecurity();
+      if (isCurrent()) {
+        securityRef.current = result;
+        setSecurity(result);
+      }
+    } catch (error) {
+      if (isCurrent())
+        setSecurityError(
+          error instanceof Error
+            ? error.message
+            : 'We couldn’t check your account security. Please try again.',
+        );
+    } finally {
+      if (isCurrent()) setSecurityLoading(false);
+    }
+  }, []);
+
+  const userId = session?.user.id;
+  const sessionToken = session?.access_token;
+  useEffect(() => {
+    // Auth callbacks stay synchronous; SDK calls here run after its session lock
+    // is released. A fresh server check also catches factors changed elsewhere.
+    if (userId) void refreshSecurity();
+  }, [userId, sessionToken, refreshVersion, refreshSecurity]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -147,18 +214,24 @@ export default function useMarketplace() {
     };
   }, [refreshVersion]);
 
-  const userId = session?.user.id;
+  const accountReady =
+    !cloudEnabled ||
+    Boolean(
+      session && security && !security.needsChallenge && !securityLoading,
+    );
   useEffect(() => {
-    if (!supabase || !userId) return;
+    if (!supabase || !userId || !accountReady || !securityRef.current) return;
     let active = true;
     const generation = accountRef.current.generation;
     const revision = accountRevision.current;
+    const assuranceRevision = securityRevision.current;
     setAccountLoading(true);
     setAccountError('');
     void fetchAccountData(userId)
       .then((data) => {
         if (
           active &&
+          assuranceRevision === securityRevision.current &&
           generation === accountRef.current.generation &&
           revision === accountRevision.current
         ) {
@@ -169,6 +242,7 @@ export default function useMarketplace() {
       .catch((error: unknown) => {
         if (
           active &&
+          assuranceRevision === securityRevision.current &&
           generation === accountRef.current.generation &&
           revision === accountRevision.current
         )
@@ -179,13 +253,17 @@ export default function useMarketplace() {
           );
       })
       .finally(() => {
-        if (active && generation === accountRef.current.generation)
+        if (
+          active &&
+          generation === accountRef.current.generation &&
+          assuranceRevision === securityRevision.current
+        )
           setAccountLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [userId, refreshVersion]);
+  }, [userId, accountReady, security, refreshVersion]);
 
   const refresh = useCallback(
     () => setRefreshVersion((value) => value + 1),
@@ -200,6 +278,14 @@ export default function useMarketplace() {
   function account() {
     const current = accountRef.current;
     if (!current.id || !session) throw new Error('Please sign in to continue.');
+    if (!securityRef.current)
+      throw new Error(
+        'Please wait for your account security check, or use Retry.',
+      );
+    if (securityRef.current.needsChallenge)
+      throw new Error(
+        'Please verify a code from your authenticator app to continue.',
+      );
     if (accountLoading || !authReady || accountError)
       throw new Error('Please wait for your account to load, or use Retry.');
     return { ...current };
@@ -211,6 +297,8 @@ export default function useMarketplace() {
       current.generation !== accountRef.current.generation
     )
       throw new Error('Your account changed. Please sign in and try again.');
+    if (!securityRef.current || securityRef.current.needsChallenge)
+      throw new Error('Please verify your account before continuing.');
   }
 
   async function toggleSave(id: string) {
@@ -359,6 +447,32 @@ export default function useMarketplace() {
     if (error) throw new Error('We couldn’t sign you out. Please try again.');
   }
 
+  async function startAuthenticator() {
+    const result = await enrollAuthenticator();
+    return result;
+  }
+
+  async function confirmAuthenticator(factorId: string, code: string) {
+    await verifyAuthenticator(factorId, code);
+    // Verification has succeeded even if this separate security lookup fails.
+    // The lookup keeps account data locked until its result is confirmed.
+    await refreshSecurity();
+  }
+
+  async function deleteAuthenticator(factorId: string) {
+    await removeAuthenticator(factorId);
+    await refreshSecurity();
+  }
+
+  function finishRecovery() {
+    setRecovery(false);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('account') === 'recovery') {
+      url.searchParams.delete('account');
+      window.history.replaceState(window.history.state, '', url);
+    }
+  }
+
   function clearDemo() {
     if (cloudEnabled) return;
     setDemoSaved([]);
@@ -375,15 +489,30 @@ export default function useMarketplace() {
     cloud: cloudEnabled,
     session,
     authReady,
+    accountReady,
+    security,
+    securityLoading,
+    securityError,
+    recovery,
+    refreshSecurity,
+    startAuthenticator,
+    confirmAuthenticator,
+    deleteAuthenticator,
+    finishRecovery,
     listings: visibleListings,
     saved: cloudEnabled ? saved : demoSaved,
     bookings: cloudEnabled ? bookings : demoBookings,
     loading:
       cloudEnabled &&
-      (listingLoading || !authReady || accountLoading) &&
+      (listingLoading || !authReady || securityLoading || accountLoading) &&
       !backendError,
     error:
-      backendError || authError || listingError || accountError || storageError,
+      backendError ||
+      authError ||
+      securityError ||
+      listingError ||
+      accountError ||
+      storageError,
     refresh,
     toggleSave,
     createListing,

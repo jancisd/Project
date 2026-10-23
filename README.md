@@ -43,6 +43,10 @@ Already connected? Run the new [photo storage migration](supabase/migrations/202
 once in Supabase's SQL Editor to enable listing uploads. The original four-table
 migration does not need to be run again.
 
+If a Supabase GitHub deployment reports `relation "listings" already exists`
+after a manual setup, use the [migration history recovery guide](supabase/repairs/README.md)
+to record the existing schema before retrying that deployment.
+
 Without configuration, the demo below keeps working. Once configured, saves are
 confirmed by the database before the UI reports success. Connection failures
 show an error and Retry; they never silently store cloud actions in the browser.

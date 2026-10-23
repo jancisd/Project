@@ -8,6 +8,7 @@ container="airstethics-db-test-$$-${RANDOM}"
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
   rm -f "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+  rm -f "/tmp/${container}-repair.log"
 }
 trap cleanup EXIT INT TERM
 
@@ -92,4 +93,21 @@ parallel_retry() {
 parallel_retry supabase/tests/concurrent-listing-retry.sql
 parallel_retry supabase/tests/concurrent-booking-retry.sql
 psql_in --quiet < supabase/tests/after-retries.sql
-echo 'Database and photo storage policies, booking validation, idempotency, cancellation, and concurrent slot protection passed.'
+
+# SQL Editor setup creates application objects without the CLI's migration
+# history. Adopting that existing schema must leave every business row intact,
+# be safe to repeat, and refuse to mark a mismatched schema as applied.
+psql_in --quiet < supabase/tests/migration-adoption-before.sql
+psql_in --quiet < supabase/repairs/adopt_existing_marketplace.sql
+psql_in --quiet < supabase/repairs/adopt_existing_marketplace.sql
+psql_in --quiet < supabase/tests/migration-adoption-after.sql
+psql_in --quiet < supabase/tests/migration-adoption-invalid.sql
+if psql_in --quiet < supabase/repairs/adopt_existing_marketplace.sql >"/tmp/${container}-repair.log" 2>&1; then
+  echo 'Migration adoption must refuse a schema with booking RLS disabled.' >&2
+  exit 1
+fi
+psql_in --quiet < supabase/tests/migration-adoption-rejected.sql
+psql_in --quiet < supabase/repairs/adopt_existing_marketplace.sql
+psql_in --quiet < supabase/tests/migration-adoption-after.sql
+rm -f "/tmp/${container}-repair.log"
+echo 'Database and photo storage policies, booking validation, idempotency, cancellation, concurrent slots, and non-destructive migration adoption passed.'

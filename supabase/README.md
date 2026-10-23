@@ -9,15 +9,17 @@ connect a hosted project automatically.
 1. Create a project at [Supabase](https://supabase.com/dashboard). Choose a
    Canadian database region if available for your account. Keep the database
    password in your own password manager.
-2. In the project's **SQL Editor**, run
-   [`migrations/202610220001_marketplace.sql`](migrations/202610220001_marketplace.sql)
+2. Create the database schema using one migration workflow. If Supabase's
+   GitHub integration or CLI is managing migrations, let that workflow apply
+   the files in `migrations/` in filename order. For a SQL Editor-only setup,
+   run [`migrations/202610220001_marketplace.sql`](migrations/202610220001_marketplace.sql)
    once, followed by
    [`migrations/202610230001_listing_photos.sql`](migrations/202610230001_listing_photos.sql).
-   The first creates listings, services, favourites, private bookings, policies,
-   and booking functions. The second creates the public photo bucket and upload
-   permissions. **If the four app tables already exist, run only the new photo
-   migration.** For an existing Supabase CLI workflow, apply these through your
-   normal migration process instead.
+   The first creates the four app tables and booking functions; the second
+   creates photo storage and permissions. **If the four app tables already
+   exist, do not rerun the initial setup.** Manual SQL does not record migration
+   history automatically. Before enabling automatic deployments for an existing
+   manual setup, follow the [migration history recovery guide](repairs/README.md).
 3. Optionally run [`seed.sql`](seed.sql) in the SQL Editor to populate the
    fictional Alberta studios from the demo. Skip this for an empty catalogue.
    These seeded businesses are marked as samples; their bookings do not notify

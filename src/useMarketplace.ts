@@ -29,6 +29,9 @@ import {
   publishListing,
   reserveBooking,
   cancelReservation,
+  fetchHostDashboard,
+  updateHostedListing,
+  cancelHostReservation,
 } from './backend';
 
 export default function useMarketplace() {
@@ -51,6 +54,11 @@ export default function useMarketplace() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [hostListings, setHostListings] = useState<Listing[]>([]);
+  const [hostBookings, setHostBookings] = useState<Booking[]>([]);
+  const [hostLoaded, setHostLoaded] = useState(false);
+  const [hostLoading, setHostLoading] = useState(cloudEnabled);
+  const [hostError, setHostError] = useState('');
   const [listingLoading, setListingLoading] = useState(cloudEnabled);
   const [accountLoading, setAccountLoading] = useState(false);
   const [listingError, setListingError] = useState('');
@@ -66,6 +74,7 @@ export default function useMarketplace() {
   const photoUploads = useRef(new Map<string, Promise<string[]>>());
   const listingRevision = useRef(0);
   const accountRevision = useRef(0);
+  const hostRevision = useRef(0);
   const securityRevision = useRef(0);
   const securityRef = useRef<AccountSecurity | null>(null);
   const accessToken = useRef<string | null>(null);
@@ -115,6 +124,7 @@ export default function useMarketplace() {
         setBookings([]);
         setAccountError('');
         setAccountLoading(Boolean(id));
+        setHostError('');
         photoUploads.current.clear();
         setRecovery(false);
       }
@@ -127,6 +137,10 @@ export default function useMarketplace() {
         setSecurityError('');
         setSaved([]);
         setBookings([]);
+        setHostListings([]);
+        setHostBookings([]);
+        setHostLoaded(false);
+        setHostLoading(Boolean(id));
       }
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(nextSession);
@@ -157,6 +171,11 @@ export default function useMarketplace() {
     setSecurityError('');
     setSaved([]);
     setBookings([]);
+    setHostListings([]);
+    setHostBookings([]);
+    setHostLoaded(false);
+    setHostLoading(true);
+    setHostError('');
     setAccountLoading(false);
     const isCurrent = () =>
       mounted.current &&
@@ -265,6 +284,42 @@ export default function useMarketplace() {
     };
   }, [userId, accountReady, security, refreshVersion]);
 
+  useEffect(() => {
+    if (!supabase || !userId || !accountReady || !securityRef.current) return;
+    let active = true;
+    const generation = accountRef.current.generation;
+    const assuranceRevision = securityRevision.current;
+    const revision = hostRevision.current;
+    const isCurrent = () =>
+      active &&
+      generation === accountRef.current.generation &&
+      assuranceRevision === securityRevision.current &&
+      revision === hostRevision.current;
+    setHostLoading(true);
+    setHostError('');
+    void fetchHostDashboard()
+      .then((data) => {
+        if (!isCurrent()) return;
+        setHostListings(data.listings);
+        setHostBookings(data.bookings);
+        setHostLoaded(true);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent())
+          setHostError(
+            error instanceof Error
+              ? error.message
+              : 'We couldn’t load your business. Please try again.',
+          );
+      })
+      .finally(() => {
+        if (isCurrent()) setHostLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId, accountReady, security, refreshVersion]);
+
   const refresh = useCallback(
     () => setRefreshVersion((value) => value + 1),
     [],
@@ -329,8 +384,37 @@ export default function useMarketplace() {
     }
   }
 
-  async function createListing(listing: Listing, photos: File[] = []) {
+  async function listingPhotoSources(
+    current: { id: string | null; generation: number },
+    requestId: string,
+    photos: File[],
+  ) {
+    if (!photos.length) return [];
+    const key = `${current.generation}:${requestId}`;
+    let request = photoUploads.current.get(key);
+    if (!request) {
+      request = uploadListingPhotos(current.id!, requestId, photos, () =>
+        stillCurrent(current),
+      );
+      photoUploads.current.set(key, request);
+      void request.catch(() => {
+        if (photoUploads.current.get(key) === request)
+          photoUploads.current.delete(key);
+      });
+    }
+    return request;
+  }
+
+  async function createListing(
+    listing: Listing,
+    photos: File[] = [],
+    additionalLocation = false,
+  ) {
     if (!cloudEnabled) {
+      if (demoLocalListings.length && !additionalLocation)
+        throw new Error(
+          'You already have a space. Open My business to edit it, or choose Add another location.',
+        );
       const sources = photos.length ? await demoPhotoSources(photos) : [];
       const saved = sources.length
         ? { ...listing, image: sources[0], images: sources }
@@ -349,27 +433,15 @@ export default function useMarketplace() {
       return;
     }
     const current = account();
-    let sources: string[] = [];
-    if (photos.length) {
-      const key = `${current.generation}:${listing.id}`;
-      let request = photoUploads.current.get(key);
-      if (!request) {
-        request = uploadListingPhotos(current.id!, listing.id, photos, () =>
-          stillCurrent(current),
-        );
-        photoUploads.current.set(key, request);
-        void request.catch(() => {
-          if (photoUploads.current.get(key) === request)
-            photoUploads.current.delete(key);
-        });
-      }
-      sources = await request;
-    }
+    if (!hostLoaded || hostLoading || hostError)
+      throw new Error('Please load My business before listing your space.');
+    const sources = await listingPhotoSources(current, listing.id, photos);
     stillCurrent(current);
     const result = await publishListing(
       sources.length
         ? { ...listing, image: sources[0], images: sources }
         : listing,
+      additionalLocation,
     );
     stillCurrent(current);
     listingRevision.current += 1;
@@ -377,6 +449,60 @@ export default function useMarketplace() {
       result,
       ...previous.filter((row) => row.id !== result.id),
     ]);
+    hostRevision.current += 1;
+    setHostListings((previous) => [
+      result,
+      ...previous.filter((row) => row.id !== result.id),
+    ]);
+    setHostLoading(false);
+  }
+
+  async function updateListing(
+    listing: Listing,
+    photos: File[] = [],
+    requestId: string = crypto.randomUUID(),
+  ) {
+    const owned = cloudEnabled ? hostListings : demoLocalListings;
+    if (!owned.some((row) => row.id === listing.id))
+      throw new Error(
+        'You can only edit a space that belongs to your account.',
+      );
+    if (listing.images.length + photos.length > 8)
+      throw new Error('Keep up to 8 photos per space.');
+    const current = cloudEnabled ? account() : null;
+    const sources = current
+      ? await listingPhotoSources(current, requestId, photos)
+      : await demoPhotoSources(photos);
+    const images = [...listing.images, ...sources];
+    if (!images.length)
+      throw new Error('Keep at least one photo or add a new photo.');
+    const candidate = { ...listing, images, image: images[0] };
+    if (!current) {
+      const next = demoLocalListings.map((row) =>
+        row.id === listing.id ? candidate : row,
+      );
+      try {
+        localStorage.setItem('airstethics:listings', JSON.stringify(next));
+      } catch {
+        throw new Error(
+          'Your changes couldn’t be saved in this browser. Try fewer or smaller photos.',
+        );
+      }
+      setDemoLocalListings(next);
+      return;
+    }
+    stillCurrent(current);
+    const result = await updateHostedListing(candidate);
+    stillCurrent(current);
+    listingRevision.current += 1;
+    hostRevision.current += 1;
+    setListings((previous) =>
+      previous.map((row) => (row.id === result.id ? result : row)),
+    );
+    setHostListings((previous) =>
+      previous.map((row) => (row.id === result.id ? result : row)),
+    );
+    setHostLoading(false);
   }
 
   async function createBooking(
@@ -407,6 +533,13 @@ export default function useMarketplace() {
       result,
       ...previous.filter((row) => row.id !== result.id),
     ]);
+    if (hostListings.some((listing) => listing.id === result.listingId)) {
+      hostRevision.current += 1;
+      setHostBookings((previous) => [
+        result,
+        ...previous.filter((row) => row.id !== result.id),
+      ]);
+    }
     return result;
   }
 
@@ -423,6 +556,38 @@ export default function useMarketplace() {
     const result = await cancelReservation(id);
     stillCurrent(current);
     accountRevision.current += 1;
+    setBookings((previous) =>
+      previous.map((row) => (row.id === id ? result : row)),
+    );
+    hostRevision.current += 1;
+    setHostBookings((previous) =>
+      previous.map((row) => (row.id === id ? result : row)),
+    );
+  }
+
+  async function cancelHostedBooking(id: string) {
+    if (!cloudEnabled) {
+      if (
+        !demoBookings.some(
+          (booking) =>
+            booking.id === id &&
+            demoLocalListings.some(
+              (listing) => listing.id === booking.listingId,
+            ),
+        )
+      )
+        throw new Error('This appointment does not belong to your business.');
+      await cancelBooking(id);
+      return;
+    }
+    const current = account();
+    const result = await cancelHostReservation(id);
+    stillCurrent(current);
+    hostRevision.current += 1;
+    accountRevision.current += 1;
+    setHostBookings((previous) =>
+      previous.map((row) => (row.id === id ? result : row)),
+    );
     setBookings((previous) =>
       previous.map((row) => (row.id === id ? result : row)),
     );
@@ -480,10 +645,16 @@ export default function useMarketplace() {
     setDemoLocalListings([]);
   }
 
-  const visibleListings = useMemo(
-    () => (cloudEnabled ? listings : [...demoLocalListings, ...demoListings]),
-    [listings, demoLocalListings],
-  );
+  const visibleListings = useMemo(() => {
+    if (!cloudEnabled) return [...demoLocalListings, ...demoListings];
+    const owned = new Map(hostListings.map((listing) => [listing.id, listing]));
+    return [
+      ...hostListings.filter(
+        (listing) => !listings.some((row) => row.id === listing.id),
+      ),
+      ...listings.map((listing) => owned.get(listing.id) ?? listing),
+    ];
+  }, [listings, hostListings, demoLocalListings]);
 
   return {
     cloud: cloudEnabled,
@@ -502,6 +673,15 @@ export default function useMarketplace() {
     listings: visibleListings,
     saved: cloudEnabled ? saved : demoSaved,
     bookings: cloudEnabled ? bookings : demoBookings,
+    hostListings: cloudEnabled ? hostListings : demoLocalListings,
+    hostBookings: cloudEnabled
+      ? hostBookings
+      : demoBookings.filter((booking) =>
+          demoLocalListings.some((listing) => listing.id === booking.listingId),
+        ),
+    hostLoaded: !cloudEnabled || hostLoaded,
+    hostLoading: cloudEnabled && hostLoading,
+    hostError,
     loading:
       cloudEnabled &&
       (listingLoading || !authReady || securityLoading || accountLoading) &&
@@ -516,6 +696,8 @@ export default function useMarketplace() {
     refresh,
     toggleSave,
     createListing,
+    updateListing,
+    cancelHostedBooking,
     createBooking,
     cancelBooking,
     clearDemo,

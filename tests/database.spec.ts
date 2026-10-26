@@ -142,6 +142,13 @@ async function mockDatabase(page: Page, signedIn = false) {
     const failure = (message = 'Database unavailable', code = 'XX000') =>
       reply({ message, code, details: null, hint: null }, 400);
 
+    if (path === '/rest/v1/rpc/get_host_dashboard')
+      return reply({
+        listings: state.listings.filter(
+          (listing) => listing.id === '33333333-3333-4333-8333-333333333333',
+        ),
+        bookings: [],
+      });
     if (path === '/auth/v1/user') return reply(session().user);
     if (path === '/auth/v1/token' || path === '/auth/v1/signup') {
       if (state.authGate) await state.authGate;

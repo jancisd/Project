@@ -8,10 +8,14 @@ type StoredStudio = {
   coordinates: { lat: number; lng: number };
 };
 
-async function partnerForm(page: Page, name: string) {
+async function partnerForm(page: Page, name: string, additional = false) {
   await page
     .getByRole('button', { name: 'Make yourself at home', exact: true })
     .click();
+  if (additional)
+    await page
+      .getByRole('button', { name: 'Add another location', exact: true })
+      .click();
   const form = page.getByRole('dialog');
   await form.getByLabel('Your space’s name', { exact: true }).fill(name);
   await form.getByLabel('Your name', { exact: true }).fill('Jordan Demo');
@@ -86,7 +90,7 @@ test('the same neighbourhood name is pinned in its selected city rather than the
   expect(edmonton.coordinates.lng).toBeGreaterThan(-113.49);
   expect(edmonton.coordinates.lng).toBeLessThan(-113.45);
 
-  form = await partnerForm(page, 'Calgary Parkdale Demo');
+  form = await partnerForm(page, 'Calgary Parkdale Demo', true);
   await enterNeighbourhood(form, 'Calgary', 'Parkdale');
   const calgary = await createStudio(page, form, 'Calgary Parkdale Demo');
   expect(calgary.city).toBe('Calgary');

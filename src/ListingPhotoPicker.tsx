@@ -14,6 +14,8 @@ type Props = {
   onCheckingChange: (checking: boolean) => void;
   cloud: boolean;
   disabled?: boolean;
+  existingCount?: number;
+  editing?: boolean;
 };
 
 export default function ListingPhotoPicker({
@@ -22,6 +24,8 @@ export default function ListingPhotoPicker({
   onCheckingChange,
   cloud,
   disabled = false,
+  existingCount = 0,
+  editing = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const allocatedUrls = useRef(new Set<string>());
@@ -53,7 +57,7 @@ export default function ListingPhotoPicker({
     setError('');
     const added: SelectedListingPhoto[] = [];
     try {
-      validatePhotoFiles(files, photos.length);
+      validatePhotoFiles(files, photos.length + existingCount);
       checkingRef.current = true;
       setChecking(true);
       onCheckingChange(true);
@@ -113,12 +117,14 @@ export default function ListingPhotoPicker({
       <div className="listing-photo-heading">
         <h3 id={titleId}>Photos of your space</h3>
         <span>
-          {photos.length} / {MAX_LISTING_PHOTOS}
+          {photos.length + existingCount} / {MAX_LISTING_PHOTOS}
         </span>
       </div>
       <p className="listing-photo-help" id={helpId}>
-        Add up to 8 JPEG, PNG, or WebP photos, under 5 MB each. Your first photo
-        is the cover.
+        Add up to 8 JPEG, PNG, or WebP photos, under 5 MB each.{' '}
+        {editing && existingCount > 0
+          ? 'The first current photo stays your cover.'
+          : 'Your first photo is the cover.'}
       </p>
       <input
         className="listing-photo-input"
@@ -129,7 +135,11 @@ export default function ListingPhotoPicker({
         aria-label="Listing photos"
         aria-describedby={helpId}
         tabIndex={-1}
-        disabled={disabled || checking || photos.length >= MAX_LISTING_PHOTOS}
+        disabled={
+          disabled ||
+          checking ||
+          photos.length + existingCount >= MAX_LISTING_PHOTOS
+        }
         onChange={addPhotos}
       />
       {photos.length > 0 && (
@@ -139,7 +149,7 @@ export default function ListingPhotoPicker({
               key={photo.id}
               className="listing-photo-item"
               data-testid="listing-photo-preview"
-              data-cover={index === 0}
+              data-cover={index === 0 && existingCount === 0}
             >
               <div className="listing-photo-preview">
                 <img
@@ -149,7 +159,7 @@ export default function ListingPhotoPicker({
                 {index === 0 && (
                   <span className="listing-photo-cover">
                     <Star size={12} fill="currentColor" />
-                    Cover photo
+                    {existingCount > 0 ? 'First new photo' : 'Cover photo'}
                   </span>
                 )}
               </div>
@@ -162,10 +172,14 @@ export default function ListingPhotoPicker({
                     type="button"
                     onClick={() => makeCover(photo)}
                     disabled={disabled || checking}
-                    aria-label={`Make ${photo.file.name} cover`}
+                    aria-label={
+                      existingCount > 0
+                        ? `Move ${photo.file.name} first among new photos`
+                        : `Make ${photo.file.name} cover`
+                    }
                   >
                     <Star size={13} />
-                    Make cover
+                    {existingCount > 0 ? 'Move first' : 'Make cover'}
                   </button>
                 )}
                 <button
@@ -186,7 +200,11 @@ export default function ListingPhotoPicker({
         className="listing-photo-add"
         type="button"
         onClick={() => inputRef.current?.click()}
-        disabled={disabled || checking || photos.length >= MAX_LISTING_PHOTOS}
+        disabled={
+          disabled ||
+          checking ||
+          photos.length + existingCount >= MAX_LISTING_PHOTOS
+        }
       >
         <ImagePlus size={18} />
         Add photos
@@ -203,9 +221,13 @@ export default function ListingPhotoPicker({
       )}
       <p className="listing-photo-help">
         {cloud
-          ? 'Your photos upload when you publish.'
+          ? editing
+            ? 'New photos upload when you save your changes.'
+            : 'Your photos upload when you publish.'
           : 'Your photos are saved with this browser’s demo listing.'}{' '}
-        If you skip photos, we’ll use sample images.
+        {editing
+          ? 'Keep at least one current photo or add a new one.'
+          : 'If you skip photos, we’ll use sample images.'}
       </p>
     </section>
   );

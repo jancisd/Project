@@ -15,4 +15,4 @@ export interface Booking {
   status: 'confirmed' | 'cancelled';
 }
 
-export type View = 'explore' | 'saved' | 'appointments';
+export type View = 'explore' | 'saved' | 'appointments' | 'hosting';

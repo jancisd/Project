@@ -24,6 +24,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
+  Building2,
   X,
 } from 'lucide-react';
 import { categories } from './data';
@@ -45,6 +46,7 @@ import {
 
 const cities = ['Edmonton', 'Calgary', 'Canmore'];
 const DiscoverMap = lazy(() => import('./DiscoverMap'));
+const HostDashboard = lazy(() => import('./HostDashboard'));
 type MapArea = { north: number; south: number; east: number; west: number };
 const categoryIcons: Record<Category, typeof Scissors> = {
   All: Grid2X2,
@@ -311,6 +313,8 @@ function App() {
   const [draftRating, setDraftRating] = useState(false);
   const [selected, setSelected] = useState<Listing | null>(null);
   const [partnerOpen, setPartnerOpen] = useState(false);
+  const [editingSpace, setEditingSpace] = useState<Listing | null>(null);
+  const [additionalLocation, setAdditionalLocation] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [info, setInfo] = useState<'about' | 'privacy' | null>(null);
@@ -366,6 +370,9 @@ function App() {
   useEffect(() => {
     setSelected(null);
     setPartnerOpen(false);
+    setEditingSpace(null);
+    setAdditionalLocation(false);
+    if (!session) setView('explore');
     setCancelId(null);
     setCancelError('');
   }, [session?.user.id]);
@@ -459,6 +466,10 @@ function App() {
   ).length;
 
   const goTo = (next: View) => {
+    if (next === 'hosting' && needsAccount()) {
+      setMobileMenu(false);
+      return;
+    }
     setDetailsId(null);
     setMapSelectedId(null);
     restoreDetailsFocus.current = false;
@@ -486,7 +497,31 @@ function App() {
     return true;
   };
   const openPartner = () => {
-    if (!needsAccount()) setPartnerOpen(true);
+    if (needsAccount()) return;
+    if (
+      marketplace.hostListings.length ||
+      !marketplace.hostLoaded ||
+      marketplace.hostLoading ||
+      marketplace.hostError
+    ) {
+      goTo('hosting');
+      return;
+    }
+    setEditingSpace(null);
+    setAdditionalLocation(false);
+    setPartnerOpen(true);
+  };
+  const editSpace = (listing: Listing) => {
+    if (needsAccount()) return;
+    setEditingSpace(listing);
+    setAdditionalLocation(false);
+    setPartnerOpen(true);
+  };
+  const addLocation = () => {
+    if (needsAccount()) return;
+    setEditingSpace(null);
+    setAdditionalLocation(true);
+    setPartnerOpen(true);
   };
   const openBooking = (listing: Listing) => {
     if (!needsAccount()) setSelected(listing);
@@ -622,6 +657,14 @@ function App() {
               {confirmedCount > 0 && (
                 <span className="nav-count">{confirmedCount}</span>
               )}
+              <span className="nav-dot" />
+            </button>
+            <button
+              className={view === 'hosting' ? 'nav-active' : ''}
+              onClick={() => goTo('hosting')}
+            >
+              <Building2 size={16} />
+              My business
               <span className="nav-dot" />
             </button>
           </nav>
@@ -1092,6 +1135,33 @@ function App() {
           </section>
         )}
 
+        {view === 'hosting' && (
+          <Suspense
+            fallback={
+              <p className="page-width" role="status">
+                Loading your business…
+              </p>
+            }
+          >
+            <HostDashboard
+              key={session?.user.id ?? 'demo'}
+              listings={marketplace.hostListings}
+              bookings={marketplace.hostBookings}
+              loading={
+                marketplace.hostLoading || (cloud && !marketplace.accountReady)
+              }
+              error={marketplace.hostError}
+              onRetry={marketplace.refresh}
+              onEdit={editSpace}
+              onAddFirst={openPartner}
+              onAddLocation={addLocation}
+              onOpenListing={openListingDetails}
+              onCancelBooking={marketplace.cancelHostedBooking}
+              cloud={cloud}
+            />
+          </Suspense>
+        )}
+
         <section className="partner-banner page-width">
           <div className="partner-art" aria-hidden="true">
             <span>
@@ -1225,13 +1295,34 @@ function App() {
       )}
       {partnerOpen && (
         <PartnerDialog
+          key={
+            editingSpace?.id ?? (additionalLocation ? 'additional' : 'first')
+          }
           cloud={cloud}
+          initialListing={editingSpace ?? undefined}
+          additionalLocation={additionalLocation}
           onClose={() => setPartnerOpen(false)}
-          onCreate={async (listing, photos) => {
-            await marketplace.createListing(listing, photos);
+          onCreate={async (listing, photos, requestId) => {
+            if (editingSpace) {
+              await marketplace.updateListing(listing, photos, requestId);
+              setPartnerOpen(false);
+              setEditingSpace(null);
+              setToast('Your space has been updated');
+              return;
+            }
+            await marketplace.createListing(
+              listing,
+              photos,
+              additionalLocation,
+            );
+            setPartnerOpen(false);
+            if (additionalLocation) {
+              setAdditionalLocation(false);
+              setToast('Your new location is published');
+              return;
+            }
             clearFilters();
             setView('explore');
-            setPartnerOpen(false);
             setToast(
               cloud
                 ? 'Your space is published and ready to discover'
@@ -1326,8 +1417,10 @@ function App() {
             <div className="info-copy">
               <p>
                 Listings and listing photos are shared publicly. Your saved
-                places, appointment details, name, and email are stored in your
-                account and are private to you.
+                places are private to your account. Your appointment details,
+                booking name, and email are shared with the host of the space
+                you book, so they can manage your appointment. Other users
+                cannot see those details.
               </p>
               <p>
                 This early release does not collect payments or send appointment

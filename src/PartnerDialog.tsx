@@ -1,6 +1,14 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { ArrowRight, Check, MapPin, Sparkles, X } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  MapPin,
+  Sparkles,
+  Star,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { categories } from './data';
 import type { Category, Listing } from './data';
 import type { Coordinates } from './geography';
@@ -8,6 +16,7 @@ import { isWithinCityArea, resolveNeighbourhood } from './neighbourhoods';
 import ListingPhotoPicker from './ListingPhotoPicker';
 import type { SelectedListingPhoto } from './photo-files';
 import './partner-location.css';
+import './host-editor.css';
 
 const LocationPicker = lazy(() => import('./LocationPicker'));
 
@@ -24,21 +33,49 @@ export default function PartnerDialog({
   onClose,
   onCreate,
   cloud = false,
+  initialListing,
+  additionalLocation = false,
 }: {
   onClose: () => void;
-  onCreate: (listing: Listing, photos: File[]) => void | Promise<void>;
+  onCreate: (
+    listing: Listing,
+    photos: File[],
+    requestId?: string,
+  ) => void | Promise<void>;
   cloud?: boolean;
+  initialListing?: Listing;
+  additionalLocation?: boolean;
 }) {
+  const editing = Boolean(initialListing);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [name, setName] = useState('');
-  const [professional, setProfessional] = useState('');
-  const [category, setCategory] = useState<Exclude<Category, 'All'>>('Hair');
-  const [city, setCity] = useState('Edmonton');
-  const [neighborhood, setNeighborhood] = useState('');
+  const [name, setName] = useState(initialListing?.name ?? '');
+  const [professional, setProfessional] = useState(
+    initialListing?.professional.name ?? '',
+  );
+  const [category, setCategory] = useState<Exclude<Category, 'All'>>(
+    initialListing?.category ?? 'Hair',
+  );
+  const [city, setCity] = useState(initialListing?.city ?? 'Edmonton');
+  const [neighborhood, setNeighborhood] = useState(
+    initialListing?.neighborhood ?? '',
+  );
   const [serviceName, setServiceName] = useState('');
   const [price, setPrice] = useState('');
   const [duration, setDuration] = useState('60');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(
+    initialListing?.description ?? '',
+  );
+  const [existingImages, setExistingImages] = useState(() =>
+    initialListing ? [...initialListing.images] : [],
+  );
+  const [existingServices, setExistingServices] = useState(
+    () =>
+      initialListing?.services.map((service) => ({
+        ...service,
+        price: String(service.price),
+        duration: String(service.duration),
+      })) ?? [],
+  );
   const [formError, setFormError] = useState('');
   const [pending, setPending] = useState(false);
   const [photos, setPhotos] = useState<SelectedListingPhoto[]>([]);
@@ -48,9 +85,15 @@ export default function PartnerDialog({
   const attempt = useRef<{ signature: string; id: string } | null>(null);
   const neighborhoodRef = useRef<HTMLInputElement>(null);
   const [chosenMatchId, setChosenMatchId] = useState<string | null>(null);
-  const [manualMode, setManualMode] = useState(false);
-  const [manualPoint, setManualPoint] = useState<Coordinates | null>(null);
-  const [manualConfirmed, setManualConfirmed] = useState(false);
+  const [manualMode, setManualMode] = useState(
+    Boolean(initialListing?.coordinates),
+  );
+  const [manualPoint, setManualPoint] = useState<Coordinates | null>(
+    initialListing?.coordinates ?? null,
+  );
+  const [manualConfirmed, setManualConfirmed] = useState(
+    Boolean(initialListing?.coordinates),
+  );
   const resolution = useMemo(
     () => resolveNeighbourhood(neighborhood, city),
     [neighborhood, city],
@@ -91,14 +134,31 @@ export default function PartnerDialog({
       name.trim().length < 2 ||
       professional.trim().length < 2 ||
       !neighborhood.trim() ||
-      serviceName.trim().length < 2 ||
       description.trim().length < 20 ||
-      !Number.isFinite(Number(price)) ||
-      Number(price) < 5 ||
-      Number(price) > 1000
+      (!editing && (serviceName.trim().length < 2 || !validPrice(price))) ||
+      (editing &&
+        existingServices.some(
+          (service) =>
+            service.name.trim().length < 2 ||
+            !service.description.trim() ||
+            !validPrice(service.price) ||
+            !validDuration(service.duration),
+        ))
     ) {
       setFormError(
         'Please complete each field, including a description of at least 20 characters.',
+      );
+      return;
+    }
+    if (editing && existingImages.length + photos.length === 0) {
+      setFormError(
+        'Keep at least one photo, or add a new photo before saving your space.',
+      );
+      return;
+    }
+    if (existingImages.length + photos.length > 8) {
+      setFormError(
+        'Keep up to 8 photos in total. Remove a photo before adding more.',
       );
       return;
     }
@@ -110,7 +170,7 @@ export default function PartnerDialog({
     if (!coordinates) {
       setFormError(
         manualMode
-          ? `Set and confirm your pin in ${city} using “Use this pin” before creating your space.`
+          ? `Set and confirm your pin in ${city} using “Use this pin” before ${editing ? 'saving' : 'creating'} your space.`
           : resolution.status === 'ambiguous'
             ? `Choose which neighbourhood in ${city} you mean, or set and confirm its location on the map.`
             : `We couldn’t find that neighbourhood in ${city}. Check the name and city, or set and confirm its location on the map.`,
@@ -129,13 +189,16 @@ export default function PartnerDialog({
       serviceName.trim(),
       price,
       duration,
+      existingServices,
+      existingImages,
       photos.map((photo) => photo.id),
     ]);
     if (attempt.current?.signature !== signature)
       attempt.current = { signature, id: `local-${crypto.randomUUID()}` };
-    const id = attempt.current.id;
-    const image = pictures[category];
+    const id = initialListing?.id ?? attempt.current.id;
+    const image = editing ? (existingImages[0] ?? '') : pictures[category];
     const listing: Listing = {
+      ...initialListing,
       id,
       name: name.trim(),
       category,
@@ -144,26 +207,38 @@ export default function PartnerDialog({
       neighborhood: manualMode ? neighborhood.trim() : matchedPlace!.name,
       description: description.trim(),
       image,
-      images: [image, '/images/salon-pink.webp'],
-      rating: 0,
-      reviewCount: 0,
-      tag: 'New on airstethics',
-      amenities: ['Independent professional', 'By appointment'],
-      services: [
-        {
-          id: `${id}-service`,
-          name: serviceName.trim(),
-          description: 'Your signature service, thoughtfully delivered.',
-          price: Number(price),
-          duration: Number(duration),
-        },
+      images: editing ? existingImages : [image, '/images/salon-pink.webp'],
+      rating: initialListing?.rating ?? 0,
+      reviewCount: initialListing?.reviewCount ?? 0,
+      tag: initialListing?.tag ?? 'New on airstethics',
+      amenities: initialListing?.amenities ?? [
+        'Independent professional',
+        'By appointment',
       ],
+      services: editing
+        ? existingServices.map((service) => ({
+            ...service,
+            name: service.name.trim(),
+            description: service.description.trim(),
+            price: Number(service.price),
+            duration: Number(service.duration),
+          }))
+        : [
+            {
+              id: `${id}-service`,
+              name: serviceName.trim(),
+              description: 'Your signature service, thoughtfully delivered.',
+              price: Number(price),
+              duration: Number(duration),
+            },
+          ],
       professional: {
         name: professional.trim(),
         title: `${category} professional`,
-        avatar: '/images/professional-1.webp',
+        avatar:
+          initialListing?.professional.avatar ?? '/images/professional-1.webp',
       },
-      reviews: [],
+      reviews: initialListing?.reviews ?? [],
     };
     submitting.current = true;
     setPending(true);
@@ -172,6 +247,7 @@ export default function PartnerDialog({
       await onCreate(
         listing,
         photos.map((photo) => photo.file),
+        attempt.current.id,
       );
     } catch (reason) {
       if (mounted.current)
@@ -186,6 +262,34 @@ export default function PartnerDialog({
     }
   }
 
+  function validPrice(value: string) {
+    const number = Number(value);
+    return (
+      Number.isFinite(number) &&
+      number >= 5 &&
+      number <= 1000 &&
+      Math.abs(number * 100 - Math.round(number * 100)) < 0.000001
+    );
+  }
+
+  function validDuration(value: string) {
+    const number = Number(value);
+    return Number.isInteger(number) && number >= 1 && number <= 540;
+  }
+
+  function updateService(
+    id: string,
+    field: 'name' | 'description' | 'price' | 'duration',
+    value: string,
+  ) {
+    setExistingServices((previous) =>
+      previous.map((service) =>
+        service.id === id ? { ...service, [field]: value } : service,
+      ),
+    );
+    setFormError('');
+  }
+
   return (
     <dialog
       ref={dialogRef}
@@ -193,7 +297,7 @@ export default function PartnerDialog({
       aria-labelledby="partner-title"
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        if (!pending) onClose();
       }}
     >
       <div className="dialog-heading">
@@ -202,24 +306,39 @@ export default function PartnerDialog({
           className="icon-button"
           aria-label="Close partner form"
           onClick={onClose}
+          disabled={pending}
         >
           <X size={21} />
         </button>
       </div>
       <h2 id="partner-title">
-        Beautiful things
-        <br />
-        start with <em>you.</em>
+        {editing ? (
+          'Edit your space'
+        ) : additionalLocation ? (
+          'Add another location'
+        ) : (
+          <>
+            Beautiful things
+            <br />
+            start with <em>you.</em>
+          </>
+        )}
       </h2>
       <p className="dialog-intro">
-        A little preview of what your space could become.
+        {editing
+          ? 'Keep your space, services, and photos up to date.'
+          : additionalLocation
+            ? 'Create a separate listing for another space you own.'
+            : 'A little preview of what your space could become.'}
       </p>
       <div className="demo-notice">
         <Sparkles size={17} />
         <p>
-          {cloud
-            ? 'Publish your listing so it appears across devices. No clients will be contacted, and no payment is collected.'
-            : 'Create a demo listing on this device. This won’t publish a real business or contact any clients.'}
+          {editing
+            ? 'Changes apply to future bookings. Existing appointments keep the service, price, and duration agreed when they were booked.'
+            : cloud
+              ? 'Publish your listing so it appears across devices. No clients will be contacted, and no payment is collected.'
+              : 'Create a demo listing on this device. This won’t publish a real business or contact any clients.'}
         </p>
       </div>
       <p className="partner-image-note partner-location-note">
@@ -236,7 +355,7 @@ export default function PartnerDialog({
             <input
               required
               minLength={2}
-              maxLength={70}
+              maxLength={editing ? 200 : 70}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. The Sunday Studio"
@@ -248,7 +367,7 @@ export default function PartnerDialog({
               <input
                 required
                 minLength={2}
-                maxLength={60}
+                maxLength={editing ? 200 : 60}
                 value={professional}
                 onChange={(e) => setProfessional(e.target.value)}
                 placeholder="The person behind the beauty"
@@ -293,7 +412,7 @@ export default function PartnerDialog({
               <input
                 ref={neighborhoodRef}
                 required
-                maxLength={60}
+                maxLength={editing ? 200 : 60}
                 value={neighborhood}
                 onChange={(e) => {
                   setNeighborhood(e.target.value);
@@ -474,56 +593,226 @@ export default function PartnerDialog({
             <textarea
               required
               minLength={20}
-              maxLength={500}
+              maxLength={editing ? 10000 : 500}
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What makes an appointment with you feel special?"
             />
           </label>
-          <div className="partner-service-title">
-            <Check size={15} />
-            <span>Start with your signature service</span>
-          </div>
-          <label>
-            Service name
-            <input
-              required
-              minLength={2}
-              maxLength={70}
-              value={serviceName}
-              onChange={(e) => setServiceName(e.target.value)}
-              placeholder="e.g. Signature cut & style"
-            />
-          </label>
-          <div className="form-two-col">
-            <label>
-              Price (CAD)
-              <input
-                required
-                type="number"
-                min="5"
-                max="1000"
-                step="1"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="85"
-              />
-            </label>
-            <label>
-              Duration
-              <select
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-              >
-                {[15, 30, 45, 60, 90, 120, 150, 180].map((n) => (
-                  <option key={n} value={n}>
-                    {n} minutes
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          {editing ? (
+            <section
+              className="host-editor-services"
+              aria-label="Edit services"
+            >
+              <div className="partner-service-title">
+                <Check size={15} />
+                <span>Your services</span>
+              </div>
+              <p className="host-editor-note">
+                Changes apply to future bookings. Existing appointments keep
+                their booked details.
+              </p>
+              {existingServices.map((service, index) => (
+                <fieldset key={service.id} className="host-editor-service">
+                  <legend>Service {index + 1}</legend>
+                  <label>
+                    Service name
+                    <input
+                      required
+                      minLength={2}
+                      maxLength={200}
+                      aria-label={`Service ${index + 1} name`}
+                      value={service.name}
+                      onChange={(event) =>
+                        updateService(service.id, 'name', event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Service description
+                    <textarea
+                      required
+                      maxLength={5000}
+                      rows={2}
+                      aria-label={`Service ${index + 1} description`}
+                      value={service.description}
+                      onChange={(event) =>
+                        updateService(
+                          service.id,
+                          'description',
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </label>
+                  <div className="form-two-col">
+                    <label>
+                      Price (CAD)
+                      <input
+                        required
+                        type="number"
+                        min={5}
+                        max={1000}
+                        step="0.01"
+                        aria-label={`Service ${index + 1} price (CAD)`}
+                        value={service.price}
+                        onChange={(event) =>
+                          updateService(service.id, 'price', event.target.value)
+                        }
+                      />
+                    </label>
+                    <label>
+                      Duration (minutes)
+                      <input
+                        required
+                        type="number"
+                        min={1}
+                        max={540}
+                        step={1}
+                        aria-label={`Service ${index + 1} duration (minutes)`}
+                        value={service.duration}
+                        onChange={(event) =>
+                          updateService(
+                            service.id,
+                            'duration',
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                </fieldset>
+              ))}
+            </section>
+          ) : (
+            <>
+              <div className="partner-service-title">
+                <Check size={15} />
+                <span>Start with your signature service</span>
+              </div>
+              <label>
+                Service name
+                <input
+                  required
+                  minLength={2}
+                  maxLength={70}
+                  value={serviceName}
+                  onChange={(e) => setServiceName(e.target.value)}
+                  placeholder="e.g. Signature cut & style"
+                />
+              </label>
+              <div className="form-two-col">
+                <label>
+                  Price (CAD)
+                  <input
+                    required
+                    type="number"
+                    min="5"
+                    max="1000"
+                    step="1"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="85"
+                  />
+                </label>
+                <label>
+                  Duration
+                  <select
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                  >
+                    {[15, 30, 45, 60, 90, 120, 150, 180].map((n) => (
+                      <option key={n} value={n}>
+                        {n} minutes
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </>
+          )}
+          {editing && (
+            <section
+              className="host-editor-gallery"
+              aria-label="Current listing photos"
+            >
+              <div className="listing-photo-heading">
+                <h3>Current photos</h3>
+                <span>{existingImages.length} saved</span>
+              </div>
+              <p className="host-editor-note">
+                Keep the photos you want, and choose a cover. New uploads appear
+                after these photos. To use a new photo as the cover, remove the
+                current photos first.
+              </p>
+              {existingImages.length > 0 ? (
+                <ol
+                  className="listing-photo-grid"
+                  aria-label="Existing listing photos"
+                >
+                  {existingImages.map((source, index) => (
+                    <li
+                      key={`${source}:${index}`}
+                      className="listing-photo-item"
+                      data-testid="existing-listing-photo"
+                      data-cover={index === 0}
+                    >
+                      <div className="listing-photo-preview">
+                        <img
+                          src={source}
+                          alt={`Current listing photo ${index + 1}`}
+                        />
+                        {index === 0 && (
+                          <span className="listing-photo-cover">
+                            <Star size={12} fill="currentColor" />
+                            Cover photo
+                          </span>
+                        )}
+                      </div>
+                      <div className="listing-photo-actions">
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            aria-label={`Make existing photo ${index + 1} cover`}
+                            onClick={() =>
+                              setExistingImages([
+                                source,
+                                ...existingImages.filter(
+                                  (_, photoIndex) => photoIndex !== index,
+                                ),
+                              ])
+                            }
+                          >
+                            <Star size={13} />
+                            Make cover
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={`Remove existing photo ${index + 1}`}
+                          onClick={() =>
+                            setExistingImages((previous) =>
+                              previous.filter(
+                                (_, photoIndex) => photoIndex !== index,
+                              ),
+                            )
+                          }
+                        >
+                          <Trash2 size={13} />
+                          Remove
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="host-editor-note">
+                  Add at least one new photo below before saving.
+                </p>
+              )}
+            </section>
+          )}
           <ListingPhotoPicker
             photos={photos}
             onChange={(next) => {
@@ -533,6 +822,8 @@ export default function PartnerDialog({
             onCheckingChange={setCheckingPhotos}
             cloud={cloud}
             disabled={pending}
+            existingCount={existingImages.length}
+            editing={editing}
           />
           {formError && (
             <p className="partner-error" role="alert">
@@ -546,9 +837,11 @@ export default function PartnerDialog({
           >
             {pending
               ? 'Saving your space…'
-              : cloud
-                ? 'Publish my space'
-                : 'Create my demo space'}{' '}
+              : editing
+                ? 'Save changes'
+                : cloud
+                  ? 'Publish my space'
+                  : 'Create my demo space'}{' '}
             <ArrowRight size={17} />
           </button>
         </fieldset>

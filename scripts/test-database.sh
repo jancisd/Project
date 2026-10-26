@@ -39,6 +39,12 @@ psql_in() {
 
 psql_in --quiet < supabase/tests/bootstrap.sql
 for migration in supabase/migrations/*.sql; do
+  # Historical fixtures exercise the original multi-space behavior first.
+  # Apply the host upgrade to their populated database below, then exercise its
+  # explicit first-space/additional-location rules without rewriting history.
+  if [[ "$migration" == 'supabase/migrations/202610260001_host_management.sql' ]]; then
+    continue
+  fi
   psql_in --quiet < "$migration"
 done
 # The security migration also supports SQL Editor setup followed by a GitHub
@@ -166,4 +172,143 @@ psql_in --quiet < supabase/migrations/202610230002_account_security.sql
 psql_in --quiet < supabase/repairs/adopt_existing_marketplace.sql
 psql_in --quiet < supabase/tests/migration-adoption-after.sql
 rm -f "/tmp/${container}-repair.log"
-echo 'Database and photo storage policies, account assurance, booking validation, idempotency, cancellation, concurrent slots, and strict non-destructive migration adoption passed.'
+
+# Hosting upgrades preserve every existing business, appointment, and customer.
+# A second application must be safe for SQL Editor setup followed by CI.
+psql_in --quiet < supabase/migrations/202610260001_host_management.sql
+psql_in --quiet < supabase/migrations/202610260001_host_management.sql
+psql_in --quiet --command 'select test_support.assert_adoption_data_unchanged();'
+psql_in --quiet < supabase/tests/host-management.sql
+
+# Different simultaneous first-space requests must contend on the account,
+# even though their request IDs differ. Only one first space may commit.
+first_space_attempt() {
+  psql_in --quiet --set request_key="$1" <<'SQL'
+begin;
+select set_config('request.jwt.claim.sub', 'ffffffff-ffff-4fff-8fff-ffffffffffff', true);
+select set_config('request.jwt.claims', '{"aal":"aal1"}', true);
+set local role authenticated;
+select public.create_listing(test_support.host_listing(:'request_key'));
+select pg_sleep(0.5);
+commit;
+SQL
+}
+set +e
+first_space_attempt '60000000-0000-4000-8000-000000000101' >"/tmp/${container}-a.log" 2>&1 &
+pid_a=$!
+first_space_attempt '60000000-0000-4000-8000-000000000102' >"/tmp/${container}-b.log" 2>&1 &
+pid_b=$!
+wait "$pid_a"; status_a=$?
+wait "$pid_b"; status_b=$?
+set -e
+if [[ "$status_a" -eq 0 && "$status_b" -eq 0 ]] || [[ "$status_a" -ne 0 && "$status_b" -ne 0 ]]; then
+  cat "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+  echo 'Expected exactly one distinct concurrent first-space request to succeed.' >&2
+  exit 1
+fi
+if ! rg -q 'Your account already has a space' "/tmp/${container}-a.log" "/tmp/${container}-b.log"; then
+  cat "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+  echo 'The losing first-space request failed for an unexpected reason.' >&2
+  exit 1
+fi
+psql_in --quiet <<'SQL'
+select test_support.assert((
+  select count(*) = 1 from public.listings
+  where owner_id = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+), 'concurrent distinct primary requests create only one space');
+SQL
+rm -f "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+
+# A booking started while an edit holds the listing lock must wait before
+# taking any profile/service snapshot, then use the entire committed edit.
+edit_space_with_lock() {
+  psql_in --quiet <<'SQL'
+begin;
+set local application_name = 'airstethics-host-edit-test';
+select set_config('request.jwt.claim.sub', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', true);
+select set_config('request.jwt.claims', '{"aal":"aal1"}', true);
+set local role authenticated;
+select public.update_listing(l.id,
+  jsonb_set(jsonb_set(jsonb_set(jsonb_set(
+    test_support.host_payload(l.id), '{name}', '"Concurrent edited studio"'),
+    '{services,0,name}', '"Concurrent edited service"'),
+    '{services,0,price}', '175'), '{services,0,duration}', '180')
+) from public.listings l
+where l.owner_id = auth.uid() and l.request_id = '60000000-0000-4000-8000-000000000001';
+select pg_sleep(2);
+commit;
+SQL
+}
+book_during_edit() {
+  psql_in --quiet <<'SQL'
+begin;
+set local application_name = 'airstethics-host-book-test';
+select set_config('request.jwt.claim.sub', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', true);
+select set_config('request.jwt.claims', '{"aal":"aal1"}', true);
+set local role authenticated;
+select public.create_booking(l.id, (
+  select s.id from public.services s where s.listing_id = l.id order by s.id limit 1
+), (now() at time zone 'America/Edmonton')::date + 10, '09:00',
+  'Concurrent Guest', 'concurrent@example.com', '70000000-0000-4000-8000-000000000010')
+from public.listings l
+where l.owner_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  and l.request_id = '60000000-0000-4000-8000-000000000001';
+commit;
+SQL
+}
+activity_count() {
+  docker exec "$container" psql --username postgres --dbname postgres \
+    --no-psqlrc --tuples-only --no-align --command "$1"
+}
+set +e
+edit_space_with_lock >"/tmp/${container}-a.log" 2>&1 &
+pid_a=$!
+set -e
+editor_ready=false
+for attempt in $(seq 1 40); do
+  if [[ "$(activity_count "select count(*) from pg_stat_activity where application_name = 'airstethics-host-edit-test' and wait_event = 'PgSleep';")" == 1 ]]; then
+    editor_ready=true
+    break
+  fi
+  sleep 0.05
+done
+if [[ "$editor_ready" != true ]]; then
+  cat "/tmp/${container}-a.log"
+  echo 'The concurrent editor did not acquire its listing lock.' >&2
+  exit 1
+fi
+set +e
+book_during_edit >"/tmp/${container}-b.log" 2>&1 &
+pid_b=$!
+set -e
+booking_waited=false
+for attempt in $(seq 1 25); do
+  if [[ "$(activity_count "select count(*) from pg_stat_activity where application_name = 'airstethics-host-book-test' and wait_event_type = 'Lock';")" == 1 ]]; then
+    booking_waited=true
+    break
+  fi
+  sleep 0.05
+done
+set +e
+wait "$pid_a"; status_a=$?
+wait "$pid_b"; status_b=$?
+set -e
+if [[ "$status_a" -ne 0 || "$status_b" -ne 0 || "$booking_waited" != true ]]; then
+  cat "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+  echo 'Concurrent edit and booking should both succeed after the booking waits for the edit.' >&2
+  exit 1
+fi
+psql_in --quiet <<'SQL'
+select test_support.assert((
+  select listing_name = 'Concurrent edited studio' and service_name = 'Concurrent edited service'
+    and price = 175 and duration = 180 and city = 'Calgary'
+  from public.bookings where id = '70000000-0000-4000-8000-000000000010'
+), 'booking waits for the edit and snapshots its whole committed profile and service');
+select test_support.assert((
+  select listing_name = 'Updated Host Studio' and service_name = 'Updated service'
+    and price = 125 and duration = 120
+  from public.bookings where id = '70000000-0000-4000-8000-000000000003'
+), 'later concurrent edits preserve earlier appointment snapshots');
+SQL
+rm -f "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+echo 'Database and photo storage policies, account assurance, booking validation, idempotency, cancellation, concurrent slots, strict migration adoption, host ownership/editing/appointment management, and concurrent edit/booking snapshots passed.'

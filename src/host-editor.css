@@ -1,0 +1,46 @@
+.host-editor-services {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.host-editor-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.host-editor-service {
+  display: grid;
+  gap: 15px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.host-editor-service legend {
+  padding: 0 6px;
+  color: var(--pine);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.host-editor-gallery {
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.host-editor-gallery .listing-photo-grid {
+  margin-bottom: 0;
+}
+
+@media (max-width: 400px) {
+  .host-editor-service,
+  .host-editor-gallery {
+    padding: 12px;
+  }
+}

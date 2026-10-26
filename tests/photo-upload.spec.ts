@@ -118,6 +118,8 @@ async function mockPhotoStorage(page: Page) {
       }
       return reply(body.prefixes.map((name) => ({ name })));
     }
+    if (path === '/rest/v1/rpc/get_host_dashboard')
+      return reply({ listings: state.listings, bookings: [] });
     if (path === '/auth/v1/user') return reply(session().user);
     if (path === '/auth/v1/token') return reply(session());
     if (path === '/rest/v1/bookings' || path === '/rest/v1/favorites')

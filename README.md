@@ -67,12 +67,15 @@ Existing browser demo data is not uploaded automatically.
 - View, persist, and cancel demo appointments. Cancelling releases the time slot.
 - Create a sample partner listing and book its service.
 - Add up to eight listing photos, preview them, choose a cover, and remove photos before publishing. Connected listings upload to Supabase Storage; demo photos stay in browser storage. Photos are optional, with sample images as a fallback.
+- Manage owned spaces under **My business**. After listing your first space, **List your space** takes you back to it; **Add another location** explicitly creates a separate space. Simultaneous first-space requests cannot create accidental duplicates.
+- Edit your space’s details, photos, map location, and existing service names, prices, and durations. Existing appointments retain their original booking details; changes apply to future bookings.
+- View upcoming, past, and cancelled client appointments for your own spaces, filter by location, and cancel an appointment after confirmation. **My appointments** continues to show appointments you booked as a customer.
 - Log in with email and password, or choose **Create account** to register. Returning sessions survive a reload. Existing email-link users can set a password through **Forgot password** or their account settings; email-link login remains available.
 - Add an optional authenticator app in **Account**. A verified code is required on subsequent logins before accessing private account data or publishing, saving, or booking.
 - Match a partner listing’s neighbourhood within its selected city and preview the pin before creating it. Shared names across cities use the selected city; ambiguous names require a choice. Unmatched neighbourhoods require a manually placed, confirmed pin, rather than a city-centre guess. Changing the city, neighbourhood, or manual coordinates clears the previous confirmation.
 - Use the responsive desktop or mobile interface and keyboard-accessible dialogs.
 
-In **demo mode**, favourites, listings, and bookings persist in this browser's local storage. Please use sample contact details. **Privacy & demo info → Clear my demo data** clears all saved demo information. In **connected mode**, listings are public and favourites and bookings belong to the signed-in account. Neither mode processes payments, verifies providers, or sends appointment emails.
+In **demo mode**, favourites, listings, and bookings persist in this browser's local storage. Please use sample contact details. **Privacy & demo info → Clear my demo data** clears all saved demo information. In **connected mode**, listings are public, favourites are private, and appointment details are available to the customer and the host of the booked space. Neither mode processes payments, verifies providers, or sends appointment emails.
 
 ## Check the app
 
@@ -91,7 +94,8 @@ npx playwright install chromium
 
 - `src/App.tsx`: discovery, search, favourites, filters, and appointments
 - `src/BookingDialog.tsx`: service selection, scheduling, and booking confirmation
-- `src/PartnerDialog.tsx`: local demo listing creation
+- `src/PartnerDialog.tsx`: space creation, additional locations, and editing
+- `src/HostDashboard.tsx` and `src/host-dashboard.css`: owned spaces and client appointment management
 - `src/data.ts`: fictional Alberta providers and services
 - `src/DiscoverMap.tsx`, `src/map.css`, and `src/discovery.css`: interactive map and responsive discovery layout
 - `src/geography.ts`: approximate demo neighbourhood coordinates and supported partner location fallbacks
@@ -110,4 +114,4 @@ Built with React, TypeScript, Vite, Leaflet, and Lucide icons. Photography, font
 
 New partner listings always save explicit coordinates from a selected neighbourhood or a manually confirmed pin. Neighbourhood matching uses 629 local records: municipal-source Edmonton and Calgary geometry from a historical 2013 snapshot, plus the supported Canmore downtown area and documented aliases. The catalogue is not a current, exhaustive list; newer or unlisted areas can be located manually. Matched neighbourhood pins use points inside the source polygon, rather than a generic city centre. Older saved listings may retain their earlier approximate locations. No neighbourhood or manual-pin lookup sends entered names to a geocoding service. Source, coverage, and licence notes are in [public/locations/README.md](public/locations/README.md).
 
-Further production work includes verified providers, provider calendar management, multiple staff schedules, payment and notification integrations, and self-service account deletion.
+Further production work includes verified providers, multiple staff schedules, listing moderation, payment and notification integrations, and self-service account deletion.

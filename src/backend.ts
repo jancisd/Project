@@ -170,6 +170,21 @@ export async function fetchAccountData(userId: string) {
   };
 }
 
+export async function fetchHostDashboard(): Promise<{
+  listings: Listing[];
+  bookings: Booking[];
+}> {
+  const { data, error } = await database().rpc('get_host_dashboard');
+  fail(error, 'We couldn’t load your business. Please try again.');
+  const dashboard = rpcRow(data);
+  if (!Array.isArray(dashboard.listings) || !Array.isArray(dashboard.bookings))
+    throw new Error('We couldn’t load your business. Please try again.');
+  return {
+    listings: dashboard.listings.map(listingFromRow),
+    bookings: dashboard.bookings.map(bookingFromRow),
+  };
+}
+
 export async function saveFavourite(
   userId: string,
   listingId: string,
@@ -191,9 +206,19 @@ export async function saveFavourite(
   fail(error, 'We couldn’t update your saved places. Please try again.');
 }
 
-export async function publishListing(listing: Listing): Promise<Listing> {
+export async function publishListing(
+  listing: Listing,
+  additionalLocation = false,
+): Promise<Listing> {
   const client = database();
-  const result = await client.rpc('create_listing', { p_listing: listing });
+  const result = await client.rpc(
+    additionalLocation ? 'create_additional_listing' : 'create_listing',
+    { p_listing: listing },
+  );
+  if (result.error?.code === '23514')
+    throw new Error(
+      'You already have a space. Open My business to edit it, or choose Add another location for a separate space.',
+    );
   fail(
     result.error,
     'We couldn’t publish your listing. Your details are still here; please try again.',
@@ -211,6 +236,37 @@ export async function publishListing(listing: Listing): Promise<Listing> {
     'Your listing was saved, but we couldn’t reload it. Please try again.',
   );
   return listingFromRow(data!);
+}
+
+export async function updateHostedListing(listing: Listing): Promise<Listing> {
+  const client = database();
+  const result = await client.rpc('update_listing', {
+    p_listing_id: listing.id,
+    p_listing: listing,
+  });
+  fail(
+    result.error,
+    'We couldn’t save your space. Your changes are still here; please try again.',
+  );
+  if (rpcRow(result.data).id !== listing.id)
+    throw new Error('We couldn’t confirm your changes. Please try again.');
+  const { data, error } = await client
+    .from('listings')
+    .select('id,data,is_demo,services(*)')
+    .eq('id', listing.id)
+    .single();
+  fail(error, 'Your space was saved, but we couldn’t reload it. Please retry.');
+  return listingFromRow(data!);
+}
+
+export async function cancelHostReservation(id: string): Promise<Booking> {
+  const { data, error } = await database().rpc('host_cancel_booking', {
+    p_id: id,
+  });
+  fail(error, 'We couldn’t cancel this appointment. Please try again.');
+  if (!data)
+    throw new Error('We couldn’t confirm the cancellation. Please try again.');
+  return bookingFromRow(rpcRow(data));
 }
 
 export async function reserveBooking(

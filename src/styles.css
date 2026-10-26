@@ -1611,9 +1611,26 @@ button {
     height: 82px;
   }
   .main-nav {
+    display: none;
+    position: absolute;
+    top: 81px;
+    left: 0;
+    right: 0;
+    height: auto;
+    padding: 12px 24px 16px;
+    background: #faf9f6;
+    border-bottom: 1px solid #e1e6d5;
     gap: 18px;
   }
+  .main-nav.menu-open {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mobile-menu {
+    display: grid !important;
+  }
   .main-nav > button {
+    min-height: 36px;
     font-size: 10px;
     gap: 5px;
   }
@@ -1871,7 +1888,8 @@ button {
     gap: 10px;
   }
   .main-nav.menu-open {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .main-nav > button {
     padding: 10px 0;

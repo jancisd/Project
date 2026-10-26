@@ -96,6 +96,7 @@ function privateCalls(calls: RequestCall[]) {
     ({ path }) =>
       path === '/rest/v1/bookings' ||
       path === '/rest/v1/favorites' ||
+      path === '/rest/v1/rpc/get_host_dashboard' ||
       /^\/rest\/v1\/rpc\/(?:create_booking|cancel_booking|create_listing)$/.test(
         path,
       ) ||
@@ -158,6 +159,8 @@ async function mockAuthenticator(
         status,
       );
 
+    if (path === '/rest/v1/rpc/get_host_dashboard')
+      return reply({ listings: [], bookings: [] });
     if (path === '/auth/v1/user') {
       if (state.securityFailure) return failure('unexpected_failure', 503);
       return reply(session(state.level, state.factors).user);

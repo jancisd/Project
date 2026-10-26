@@ -16,10 +16,12 @@ connect a hosted project automatically.
    run [`migrations/202610220001_marketplace.sql`](migrations/202610220001_marketplace.sql)
    once, followed by
    [`migrations/202610230001_listing_photos.sql`](migrations/202610230001_listing_photos.sql)
-   and [`migrations/202610230002_account_security.sql`](migrations/202610230002_account_security.sql).
+   [`migrations/202610230002_account_security.sql`](migrations/202610230002_account_security.sql),
+   and [`migrations/202610260001_host_management.sql`](migrations/202610260001_host_management.sql).
    The first creates the four app tables and booking functions; the second
    creates photo storage and permissions; the third enforces authenticator
-   verification for enrolled accounts. **If the four app tables already
+   verification for enrolled accounts; the fourth adds ownership-based host
+   management and editing. **If the four app tables already
    exist, do not rerun the initial setup.** Manual SQL does not record migration
    history automatically. Before enabling automatic deployments for an existing
    manual setup, follow the [migration history recovery guide](repairs/README.md).
@@ -126,14 +128,16 @@ the site owner's identity-checked recovery process in Supabase.
   by a published listing. Failed uploads keep form details and can be retried.
   A retry after a listing-save error reuses the existing uploaded URLs.
 - Favourites belong to their signed-in user. Booking names and email addresses
-  are readable only by the customer who made the booking. The site owner can
-  administer records using Supabase's privileged dashboard.
+  are available to the customer and to the owner of the booked space through
+  the protected host dashboard RPC. Public and unrelated signed-in users cannot
+  read them. The site owner can administer records using Supabase's dashboard.
 - Availability exposes only busy times and durations, without customer details.
   The booking function checks the service, uses its database price and duration,
   applies Alberta time and opening hours, and atomically prevents overlapping
   appointments. Request IDs make identical retries safe.
-- Cancellation is customer-only. It releases the slot after the database
-  confirms the cancellation. There are no direct browser booking-write grants.
+- Customers can cancel their own appointments; hosts can cancel appointments
+  for spaces they own. Both release the slot after database confirmation. There
+  are no direct browser booking-write grants.
 - Signed-out pages clear account data. Cloud booking/contact records are not
   written to the old browser demo keys. Supabase keeps a sign-in session in the
   browser so a reload can restore the account.
@@ -154,9 +158,37 @@ demo mode to a connected project. Files left behind by abandoned or interrupted
 publication attempts may require periodic cleanup by the site owner; never
 delete an upload that might belong to an in-progress publication.
 
+## Managing a business
+
+Existing spaces remain attached to their stored `owner_id`; hosts find them
+under **My business** after signing into that account. No manual ownership
+assignment or data migration is needed. Demo listings without a real owner are
+not claimable through the app.
+
+The first listing uses `create_listing`. A distinct request from an account
+that already owns a space is rejected; an identical request retry still returns
+the original space. **Add another location** calls `create_additional_listing`
+explicitly. Both routes share an account lock to prevent accidental duplicates
+from two tabs. Existing accounts with multiple spaces keep all of them.
+
+`get_host_dashboard()` derives ownership from `auth.uid()` and returns only
+the account's spaces and their client appointments. `update_listing` checks
+ownership and MFA, validates the new profile/location/services, and preserves
+IDs, ownership, creation/request metadata, ratings, reviews, and existing booking
+snapshots. The editor retains the service set so booked service references stay
+valid; adding or removing services is future work. `host_cancel_booking` checks
+the ownership of the appointment's listing. These functions do not grant direct
+table updates or change customer-only booking RLS.
+
+Use **Refresh** to check for new appointments. The dashboard also refreshes when
+the window gains focus or the page reloads. Cloud
+host contact details stay out of demo browser storage and clear on sign-out or
+account/security changes. Removed photos are unlinked from the edited gallery;
+they are not automatically deleted from Storage, which avoids breaking existing
+booking image snapshots or in-progress publication retries.
+
 The initial model reserves one appointment at a time per listing. Multiple
-staff calendars, provider appointment management, listing editing/moderation,
-payments, appointment email delivery, and self-service account
+staff calendars, listing moderation, payments, appointment email delivery, and self-service account
 deletion are later work. For account removal, the site owner must remove or
 reassign owned listings and their dependent records before deleting the user
 in Supabase Auth. Signing out does not delete database records.

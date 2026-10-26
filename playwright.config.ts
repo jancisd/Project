@@ -13,6 +13,7 @@ export default defineConfig({
     'photo-upload.spec.ts',
     'password-auth.spec.ts',
     'authenticator.spec.ts',
+    'hosting.spec.ts',
   ],
   outputDir: 'test-results/demo',
   fullyParallel: true,

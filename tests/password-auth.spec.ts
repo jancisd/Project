@@ -99,6 +99,8 @@ async function mockAccount(page: Page, signedIn = false) {
       });
     }
     if (path === '/auth/v1/recover') return reply({});
+    if (path === '/rest/v1/rpc/get_host_dashboard')
+      return reply({ listings: [], bookings: [] });
     if (path === '/auth/v1/user') {
       if (method === 'PUT') {
         if (state.passwordGate) await state.passwordGate;

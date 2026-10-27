@@ -5,6 +5,10 @@
 [build.environment]
   NODE_VERSION = "24"
 
+# Scheduled functions are not exposed as public production HTTP endpoints.
+[functions."booking-emails"]
+  schedule = "*/15 * * * *"
+
 # Serve existing assets normally, and let the app handle other paths.
 [[redirects]]
   from = "/*"

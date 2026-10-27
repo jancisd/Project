@@ -14,6 +14,7 @@ export default defineConfig({
     'password-auth.spec.ts',
     'authenticator.spec.ts',
     'hosting.spec.ts',
+    'availability.spec.ts',
   ],
   outputDir: 'test-results/demo',
   fullyParallel: true,

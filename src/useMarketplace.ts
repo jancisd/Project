@@ -12,6 +12,14 @@ import {
   removeAuthenticator,
 } from './account-service';
 import type { AccountSecurity } from './account-service';
+import { getAuthRedirectUrl } from './platform';
+import {
+  defaultSchedule,
+  isListingSchedule,
+  isScheduleMap,
+  scheduleSlots,
+  type ListingSchedule,
+} from './availability';
 import { demoPhotoSources, uploadListingPhotos } from './photo-upload';
 import {
   isBookingArray,
@@ -32,6 +40,9 @@ import {
   fetchHostDashboard,
   updateHostedListing,
   cancelHostReservation,
+  fetchListingSchedule,
+  saveListingSchedule,
+  fetchAvailableSlots,
 } from './backend';
 
 export default function useMarketplace() {
@@ -43,6 +54,11 @@ export default function useMarketplace() {
   );
   const [demoLocalListings, setDemoLocalListings] = useState<Listing[]>(() =>
     cloudEnabled ? [] : readStored('airstethics:listings', [], isListingArray),
+  );
+  const [demoSchedules, setDemoSchedules] = useState<
+    Record<string, ListingSchedule>
+  >(() =>
+    cloudEnabled ? {} : readStored('airstethics:schedules', {}, isScheduleMap),
   );
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(!cloudEnabled);
@@ -84,6 +100,13 @@ export default function useMarketplace() {
     return () => {
       mounted.current = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const recover = () => setRecovery(true);
+    window.addEventListener('airstethics:password-recovery', recover);
+    return () =>
+      window.removeEventListener('airstethics:password-recovery', recover);
   }, []);
 
   useEffect(() => {
@@ -510,6 +533,14 @@ export default function useMarketplace() {
     serviceId: string,
   ): Promise<Booking> {
     if (!cloudEnabled) {
+      if (
+        !(
+          await availableSlots(booking.listingId, booking.date, serviceId)
+        ).includes(booking.time)
+      )
+        throw new Error(
+          'That time was just booked or is outside this space’s availability. Please choose another time.',
+        );
       if (booking.listingImage.startsWith('data:')) {
         try {
           localStorage.setItem(
@@ -600,7 +631,7 @@ export default function useMarketplace() {
       email,
       options: {
         shouldCreateUser: mode === 'signup',
-        emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
+        emailRedirectTo: getAuthRedirectUrl(),
       },
     });
     if (error) throw new Error(getSignInErrorMessage(error, mode));
@@ -643,6 +674,67 @@ export default function useMarketplace() {
     setDemoSaved([]);
     setDemoBookings([]);
     setDemoLocalListings([]);
+    setDemoSchedules({});
+    try {
+      localStorage.removeItem('airstethics:schedules');
+    } catch {
+      /* Other demo state already reports storage failures. */
+    }
+  }
+
+  const loadSchedule = useCallback(
+    async (listingId: string) =>
+      cloudEnabled
+        ? fetchListingSchedule(listingId)
+        : (demoSchedules[listingId] ?? defaultSchedule()),
+    [demoSchedules],
+  );
+
+  const availableSlots = useCallback(
+    async (listingId: string, date: string, serviceId: string) => {
+      if (cloudEnabled) return fetchAvailableSlots(listingId, date, serviceId);
+      const listing = [...demoLocalListings, ...demoListings].find(
+        (row) => row.id === listingId,
+      );
+      const service = listing?.services.find((row) => row.id === serviceId);
+      if (!service) return [];
+      return scheduleSlots(
+        demoSchedules[listingId] ?? defaultSchedule(),
+        date,
+        service.duration,
+        demoBookings.filter(
+          (booking) =>
+            booking.listingId === listingId &&
+            booking.date === date &&
+            booking.status === 'confirmed',
+        ),
+      );
+    },
+    [demoSchedules, demoLocalListings, demoBookings],
+  );
+
+  async function updateSchedule(listingId: string, schedule: ListingSchedule) {
+    if (!isListingSchedule(schedule))
+      throw new Error(
+        'Please check your opening hours, breaks, and blocked dates.',
+      );
+    if (!cloudEnabled) {
+      if (!demoLocalListings.some((listing) => listing.id === listingId))
+        throw new Error('You can only manage availability for your own space.');
+      const next = { ...demoSchedules, [listingId]: schedule };
+      try {
+        localStorage.setItem('airstethics:schedules', JSON.stringify(next));
+      } catch {
+        throw new Error(
+          'Your hours couldn’t be saved in this browser. Please try again.',
+        );
+      }
+      setDemoSchedules(next);
+      return;
+    }
+    const current = account();
+    await saveListingSchedule(listingId, schedule);
+    stillCurrent(current);
   }
 
   const visibleListings = useMemo(() => {
@@ -697,6 +789,9 @@ export default function useMarketplace() {
     toggleSave,
     createListing,
     updateListing,
+    loadSchedule,
+    availableSlots,
+    updateSchedule,
     cancelHostedBooking,
     createBooking,
     cancelBooking,

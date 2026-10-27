@@ -3,6 +3,7 @@ import type { Listing } from './data';
 import type { Booking } from './types';
 import { isBookingArray, isListingArray } from './storage';
 import { normalizeProjectUrl } from './backend-config';
+import { isListingSchedule, type ListingSchedule } from './availability';
 
 export type BusySlot = { time: string; duration: number };
 
@@ -326,5 +327,59 @@ export async function fetchAvailability(
     )
       throw new Error('We couldn’t check available times. Please try again.');
     return { time, duration };
+  });
+}
+
+export async function fetchListingSchedule(
+  listingId: string,
+): Promise<ListingSchedule> {
+  const { data, error } = await database().rpc('get_listing_schedule', {
+    p_listing_id: listingId,
+  });
+  fail(error, 'We couldn’t load the opening hours. Please try again.');
+  if (!isListingSchedule(data))
+    throw new Error('We couldn’t load the opening hours. Please try again.');
+  return data;
+}
+
+export async function saveListingSchedule(
+  listingId: string,
+  schedule: ListingSchedule,
+): Promise<ListingSchedule> {
+  if (!isListingSchedule(schedule))
+    throw new Error(
+      'Please check your opening hours, breaks, and blocked dates.',
+    );
+  const { data, error } = await database().rpc('update_listing_schedule', {
+    p_listing_id: listingId,
+    p_schedule: schedule,
+  });
+  fail(
+    error,
+    'We couldn’t save your availability. Your changes are still here; please retry.',
+  );
+  if (!isListingSchedule(data))
+    throw new Error('We couldn’t confirm your availability. Please retry.');
+  return data;
+}
+
+export async function fetchAvailableSlots(
+  listingId: string,
+  date: string,
+  serviceId: string,
+): Promise<string[]> {
+  const { data, error } = await database().rpc('available_booking_slots', {
+    p_listing_id: listingId,
+    p_date: date,
+    p_service_id: serviceId,
+  });
+  fail(error, 'We couldn’t check available times. Please try again.');
+  if (!Array.isArray(data))
+    throw new Error('We couldn’t check available times. Please try again.');
+  return data.map((row: Record<string, unknown>) => {
+    const value = String(row.booking_time).slice(0, 5);
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
+      throw new Error('We couldn’t check available times. Please try again.');
+    return value;
   });
 }

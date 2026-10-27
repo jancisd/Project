@@ -15,13 +15,16 @@ connect a hosted project automatically.
    the files in `migrations/` in filename order. For a SQL Editor-only setup,
    run [`migrations/202610220001_marketplace.sql`](migrations/202610220001_marketplace.sql)
    once, followed by
-   [`migrations/202610230001_listing_photos.sql`](migrations/202610230001_listing_photos.sql)
+   [`migrations/202610230001_listing_photos.sql`](migrations/202610230001_listing_photos.sql),
    [`migrations/202610230002_account_security.sql`](migrations/202610230002_account_security.sql),
-   and [`migrations/202610260001_host_management.sql`](migrations/202610260001_host_management.sql).
+   [`migrations/202610260001_host_management.sql`](migrations/202610260001_host_management.sql),
+   [`migrations/202610260002_host_availability.sql`](migrations/202610260002_host_availability.sql),
+   and [`migrations/202610260003_booking_notifications.sql`](migrations/202610260003_booking_notifications.sql).
    The first creates the four app tables and booking functions; the second
    creates photo storage and permissions; the third enforces authenticator
    verification for enrolled accounts; the fourth adds ownership-based host
-   management and editing. **If the four app tables already
+   management and editing; the fifth adds host schedules and authoritative
+   availability; the sixth creates the private booking-email outbox. **If the four app tables already
    exist, do not rerun the initial setup.** Manual SQL does not record migration
    history automatically. Before enabling automatic deployments for an existing
    manual setup, follow the [migration history recovery guide](repairs/README.md).
@@ -188,10 +191,45 @@ they are not automatically deleted from Storage, which avoids breaking existing
 booking image snapshots or in-progress publication retries.
 
 The initial model reserves one appointment at a time per listing. Multiple
-staff calendars, listing moderation, payments, appointment email delivery, and self-service account
+staff calendars, listing moderation, payments, push notifications, and self-service account
 deletion are later work. For account removal, the site owner must remove or
 reassign owned listings and their dependent records before deleting the user
 in Supabase Auth. Signing out does not delete database records.
+
+## Host availability
+
+**My business → Manage availability** saves weekly opening hours, breaks, closed
+days, up to 366 blocked dates, booking intervals of 15/30/60 minutes, and a
+0–120 minute buffer. Dates and booking times use `America/Edmonton`.
+The first interval starts at that day's opening time. The appointment and its
+trailing buffer must fit the open period and avoid breaks and existing bookings.
+Previously created bookings stay unchanged when hours or buffers change.
+
+`get_listing_schedule` and `available_booking_slots` are public, and expose only
+schedule rules and bookable times. `update_listing_schedule` checks ownership
+and MFA. The booking function validates the schedule again inside its
+transaction, with a per-listing lock to prevent simultaneous bookings from
+overlapping their buffers. Missing schedules retain the existing 9 AM–6 PM
+daily hours and hourly slots until the host changes them.
+
+## Booking emails
+
+The notification migration queues confirmations, cancellations, and 24-hour
+reminders for real host-created listings. Sample/demo listings do not enqueue
+emails. No historical bookings are backfilled. Reminders are scheduled only for
+bookings made more than 24 hours ahead, and pending reminders are suppressed
+when a booking is cancelled.
+
+Email jobs live in the private schema. Only the server's `service_role` can
+claim/finish jobs; account clients cannot read recipients or impersonate a worker.
+Leases, retry limits, backoff, and provider idempotency keys handle interrupted
+delivery. Follow [the email delivery guide](../docs/booking-emails.md) to configure
+Resend and Netlify's server-only keys. This is separate from Supabase's SMTP
+configuration for account confirmation and password recovery. Without provider
+settings, the worker leaves jobs unclaimed and sends nothing.
+
+The iPhone app shares these same database rules and email jobs. Native account
+links need the additional redirect URLs in [the iPhone guide](../docs/iphone.md).
 
 ## Validate changes
 
@@ -200,6 +238,8 @@ npm run build
 npm test
 npm run test:cloud
 npm run test:database
+npm run test:emails
+npm run test:native
 ```
 
 The default browser suite checks the unconfigured demo. The cloud suite uses a

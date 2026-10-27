@@ -129,7 +129,7 @@ test('an appointment is saved, reserves its slot, and can be cancelled', async (
   await expect(dialog.getByLabel('Your day')).toHaveValue(bookingDate);
   await expect(
     dialog.getByRole('button', { name: '9:00 AM', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close booking details' }).click();
 
   await navigate(page, 'My appointments');

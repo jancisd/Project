@@ -42,7 +42,9 @@ for migration in supabase/migrations/*.sql; do
   # Historical fixtures exercise the original multi-space behavior first.
   # Apply the host upgrade to their populated database below, then exercise its
   # explicit first-space/additional-location rules without rewriting history.
-  if [[ "$migration" == 'supabase/migrations/202610260001_host_management.sql' ]]; then
+  if [[ "$migration" == 'supabase/migrations/202610260001_host_management.sql' ||
+        "$migration" == 'supabase/migrations/202610260002_host_availability.sql' ||
+        "$migration" == 'supabase/migrations/202610260003_booking_notifications.sql' ]]; then
     continue
   fi
   psql_in --quiet < "$migration"
@@ -311,4 +313,78 @@ select test_support.assert((
 ), 'later concurrent edits preserve earlier appointment snapshots');
 SQL
 rm -f "/tmp/${container}-a.log" "/tmp/${container}-b.log"
-echo 'Database and photo storage policies, account assurance, booking validation, idempotency, cancellation, concurrent slots, strict migration adoption, host ownership/editing/appointment management, and concurrent edit/booking snapshots passed.'
+psql_in --quiet < supabase/migrations/202610260002_host_availability.sql
+psql_in --quiet < supabase/migrations/202610260002_host_availability.sql
+psql_in --quiet < supabase/tests/availability.sql
+
+# Adjacent appointments must also serialize when the host reserves a buffer.
+availability_attempt() {
+  psql_in --quiet --set slot_time="$1" --set booking_id="$2" <<'SQL'
+begin;
+select set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+select set_config('request.jwt.claims', '{"aal":"aal1"}', true);
+set local role authenticated;
+select test_support.availability_race(:'slot_time'::time, :'booking_id'::uuid);
+select pg_sleep(0.5);
+commit;
+SQL
+}
+set +e
+availability_attempt '10:00' '80000000-0000-4000-8000-000000000101' >"/tmp/${container}-a.log" 2>&1 &
+pid_a=$!
+availability_attempt '11:00' '80000000-0000-4000-8000-000000000102' >"/tmp/${container}-b.log" 2>&1 &
+pid_b=$!
+wait "$pid_a"; status_a=$?
+wait "$pid_b"; status_b=$?
+set -e
+if [[ "$status_a" -eq 0 && "$status_b" -eq 0 ]] || [[ "$status_a" -ne 0 && "$status_b" -ne 0 ]]; then
+  cat "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+  echo 'Expected one buffered concurrent booking to succeed.' >&2
+  exit 1
+fi
+if ! rg -q 'That time was just booked' "/tmp/${container}-a.log" "/tmp/${container}-b.log"; then
+  cat "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+  echo 'Buffered booking failed for an unexpected reason.' >&2
+  exit 1
+fi
+
+psql_in --quiet < supabase/migrations/202610260003_booking_notifications.sql
+psql_in --quiet < supabase/migrations/202610260003_booking_notifications.sql
+psql_in --quiet < supabase/tests/notifications.sql
+
+# Workers claiming at the same time must never receive the same pending email.
+notification_attempt() {
+  psql_in --quiet --set worker_name="$1" <<'SQL'
+begin;
+set local role service_role;
+insert into test_support.notification_parallel_claims(worker, jobs)
+select :'worker_name', coalesce(jsonb_agg(to_jsonb(c)), '[]'::jsonb)
+from public.claim_booking_emails(1) c;
+select pg_sleep(0.5);
+commit;
+SQL
+}
+parallel_notification_claims() {
+  local status_a status_b pid_a pid_b
+  set +e
+  notification_attempt worker_a >"/tmp/${container}-a.log" 2>&1 &
+  pid_a=$!
+  notification_attempt worker_b >"/tmp/${container}-b.log" 2>&1 &
+  pid_b=$!
+  wait "$pid_a"; status_a=$?
+  wait "$pid_b"; status_b=$?
+  set -e
+  if [[ "$status_a" -ne 0 || "$status_b" -ne 0 ]]; then
+    cat "/tmp/${container}-a.log" "/tmp/${container}-b.log"
+    echo 'Concurrent email claims should succeed without duplicate work.' >&2
+    exit 1
+  fi
+}
+parallel_notification_claims
+psql_in --quiet <<'SQL'
+select test_support.assert((
+  select count(*) = 2 and sum(jsonb_array_length(jobs)) = 1
+  from test_support.notification_parallel_claims
+), 'two simultaneous workers claim the single due email exactly once');
+SQL
+echo 'Database ownership, MFA, availability, concurrent booking buffers, immutable appointment snapshots, and leased email queues passed.'

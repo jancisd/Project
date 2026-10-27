@@ -22,6 +22,7 @@ type Props = {
   error: string;
   onRetry: () => void;
   onEdit: (listing: Listing) => void;
+  onManageAvailability: (listing: Listing) => void;
   onAddFirst: () => void;
   onAddLocation: () => void;
   onOpenListing: (listing: Listing) => void;
@@ -82,6 +83,7 @@ export default function HostDashboard({
   error,
   onRetry,
   onEdit,
+  onManageAvailability,
   onAddFirst,
   onAddLocation,
   onOpenListing,
@@ -267,6 +269,13 @@ export default function HostDashboard({
                           >
                             <PencilLine size={15} aria-hidden="true" /> Edit
                             space
+                          </button>
+                          <button
+                            className="host-outline-button"
+                            onClick={() => onManageAvailability(listing)}
+                          >
+                            <CalendarDays size={15} aria-hidden="true" />
+                            Manage availability
                           </button>
                           <button
                             className="text-button"

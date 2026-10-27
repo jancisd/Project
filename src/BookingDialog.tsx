@@ -28,6 +28,11 @@ type Props = {
     listingId: string,
     date: string,
   ) => Promise<{ time: string; duration: number }[]>;
+  loadSlots?: (
+    listingId: string,
+    date: string,
+    serviceId: string,
+  ) => Promise<string[]>;
 };
 
 function albertaNow() {
@@ -98,6 +103,7 @@ export default function BookingDialog({
   onBooked,
   cloud = false,
   loadAvailability,
+  loadSlots,
 }: Props) {
   const [serviceId, setServiceId] = useState(listing.services[0]?.id ?? '');
   const [date, setDate] = useState(dayFromNow(1));
@@ -110,9 +116,10 @@ export default function BookingDialog({
   const [availability, setAvailability] = useState<{
     key: string;
     busy: { time: string; duration: number }[];
+    slots: string[];
     loading: boolean;
     error: string;
-  }>({ key: '', busy: [], loading: false, error: '' });
+  }>({ key: '', busy: [], slots: [], loading: false, error: '' });
   const mounted = useRef(true);
   const attempt = useRef<{ signature: string; id: string } | null>(null);
   const [confirmed, setConfirmed] = useState<Booking | null>(null);
@@ -129,9 +136,11 @@ export default function BookingDialog({
   const validDate =
     /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= today && date <= lastDate;
 
-  const availabilityKey = `${listing.id}:${date}`;
+  const availabilityKey = `${listing.id}:${date}:${loadSlots ? serviceId : ''}`;
+  const slotTimes = loadSlots ? availability.slots : times;
   const loadingAvailability =
-    Boolean(loadAvailability) &&
+    validDate &&
+    Boolean(loadSlots || loadAvailability) &&
     (availability.key !== availabilityKey || availability.loading);
   const availabilityError =
     availability.key === availabilityKey ? availability.error : '';
@@ -144,20 +153,31 @@ export default function BookingDialog({
   }, []);
 
   useEffect(() => {
-    if (!loadAvailability || !validDate) return;
+    if ((!loadSlots && !loadAvailability) || !validDate || !service) return;
     let cancelled = false;
     setAvailability({
       key: availabilityKey,
       busy: [],
+      slots: [],
       loading: true,
       error: '',
     });
-    loadAvailability(listing.id, date)
-      .then((busy) => {
+    const request = loadSlots
+      ? loadSlots(listing.id, date, serviceId).then((slots) => ({
+          busy: [],
+          slots,
+        }))
+      : loadAvailability!(listing.id, date).then((busy) => ({
+          busy,
+          slots: [],
+        }));
+    request
+      .then(({ busy, slots }) => {
         if (!cancelled)
           setAvailability({
             key: availabilityKey,
             busy,
+            slots,
             loading: false,
             error: '',
           });
@@ -167,6 +187,7 @@ export default function BookingDialog({
           setAvailability({
             key: availabilityKey,
             busy: [],
+            slots: [],
             loading: false,
             error:
               reason instanceof Error
@@ -181,6 +202,8 @@ export default function BookingDialog({
     listing.id,
     date,
     loadAvailability,
+    loadSlots,
+    serviceId,
     validDate,
     availabilityKey,
     availabilityVersion,
@@ -197,6 +220,7 @@ export default function BookingDialog({
       (date === now.date && timeInMinutes(slot) <= now.minutes)
     )
       return false;
+    if (loadSlots) return availability.slots.includes(slot);
     const start = timeInMinutes(slot);
     const end = start + service.duration;
     if (end > 18 * 60) return false;
@@ -306,7 +330,7 @@ export default function BookingDialog({
       !service ||
       !validDate ||
       !time ||
-      !times.includes(time) ||
+      !slotTimes.includes(time) ||
       !slotAvailable(time)
     ) {
       setError('Please choose an available date and time for your service.');
@@ -431,7 +455,7 @@ export default function BookingDialog({
             <p className="booking-demo-note">
               <ShieldCheck size={15} />{' '}
               {cloud
-                ? 'Saved to your account. No provider has been contacted, no email sent, and no payment collected.'
+                ? 'Saved to your account and the host’s appointment book. No payment collected.'
                 : 'This is a demo. No provider has been contacted, no email sent, and no payment collected.'}
             </p>
             <button className="booking-primary" onClick={onClose}>
@@ -615,7 +639,10 @@ export default function BookingDialog({
                       </div>
                     )}
                     <div className="booking-times">
-                      {times.map((slot) => (
+                      {(!loadingAvailability && !availabilityError
+                        ? slotTimes
+                        : []
+                      ).map((slot) => (
                         <button
                           type="button"
                           className={`booking-time${time === slot ? ' is-selected' : ''}`}
@@ -634,9 +661,10 @@ export default function BookingDialog({
                     {validDate &&
                       !loadingAvailability &&
                       !availabilityError &&
-                      !times.some(slotAvailable) && (
+                      !slotTimes.some(slotAvailable) && (
                         <p className="booking-empty-times">
-                          No times left on this day. Try another date.
+                          No available times on this day. Please choose another
+                          date.
                         </p>
                       )}
                   </fieldset>
@@ -706,7 +734,7 @@ export default function BookingDialog({
                       : 'Demo booking · no payment collected.'}
                     <br />
                     {cloud
-                      ? 'Saved to your account; no provider notification or email is sent.'
+                      ? 'Saved to your account and the host’s appointment book. Check My appointments for updates.'
                       : 'Saved on this device; no email is sent.'}
                   </p>
                 </fieldset>

@@ -34,7 +34,6 @@ import BookingDialog from './BookingDialog';
 import PartnerDialog from './PartnerDialog';
 import ListingDetails from './ListingDetails';
 import { getListingCoordinates } from './geography';
-import { fetchAvailability } from './backend';
 import useMarketplace from './useMarketplace';
 import AccountDialog from './AccountDialog';
 import {
@@ -47,6 +46,7 @@ import {
 const cities = ['Edmonton', 'Calgary', 'Canmore'];
 const DiscoverMap = lazy(() => import('./DiscoverMap'));
 const HostDashboard = lazy(() => import('./HostDashboard'));
+const AvailabilityDialog = lazy(() => import('./AvailabilityDialog'));
 type MapArea = { north: number; south: number; east: number; west: number };
 const categoryIcons: Record<Category, typeof Scissors> = {
   All: Grid2X2,
@@ -314,6 +314,9 @@ function App() {
   const [selected, setSelected] = useState<Listing | null>(null);
   const [partnerOpen, setPartnerOpen] = useState(false);
   const [editingSpace, setEditingSpace] = useState<Listing | null>(null);
+  const [availabilitySpace, setAvailabilitySpace] = useState<Listing | null>(
+    null,
+  );
   const [additionalLocation, setAdditionalLocation] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [cancelId, setCancelId] = useState<string | null>(null);
@@ -371,6 +374,7 @@ function App() {
     setSelected(null);
     setPartnerOpen(false);
     setEditingSpace(null);
+    setAvailabilitySpace(null);
     setAdditionalLocation(false);
     if (!session) setView('explore');
     setCancelId(null);
@@ -1153,6 +1157,9 @@ function App() {
               error={marketplace.hostError}
               onRetry={marketplace.refresh}
               onEdit={editSpace}
+              onManageAvailability={(listing) => {
+                if (!needsAccount()) setAvailabilitySpace(listing);
+              }}
               onAddFirst={openPartner}
               onAddLocation={addLocation}
               onOpenListing={openListingDetails}
@@ -1222,7 +1229,7 @@ function App() {
           listing={selected}
           bookings={bookings}
           cloud={cloud}
-          loadAvailability={cloud ? fetchAvailability : undefined}
+          loadSlots={marketplace.availableSlots}
           onClose={() => setSelected(null)}
           onBooked={marketplace.createBooking}
         />
@@ -1335,6 +1342,28 @@ function App() {
           }}
         />
       )}
+      {availabilitySpace && (
+        <Suspense
+          fallback={
+            <p className="page-width" role="status">
+              Loading availability…
+            </p>
+          }
+        >
+          <AvailabilityDialog
+            key={`${session?.user.id ?? 'demo'}:${availabilitySpace.id}`}
+            listing={availabilitySpace}
+            cloud={cloud}
+            loadSchedule={marketplace.loadSchedule}
+            onClose={() => setAvailabilitySpace(null)}
+            onSave={async (schedule) => {
+              await marketplace.updateSchedule(availabilitySpace.id, schedule);
+              setAvailabilitySpace(null);
+              setToast('Your availability has been updated');
+            }}
+          />
+        </Suspense>
+      )}
       {cancelId && (
         <Dialog title="A change of plans?" onClose={() => setCancelId(null)}>
           <p className="dialog-intro">
@@ -1407,9 +1436,10 @@ function App() {
               <div className="demo-notice">
                 <Sparkles size={18} />
                 <p>
-                  This is an early prototype. All businesses, reviews, ratings,
-                  and availability are fictional. No providers will be
-                  contacted, and no payment is collected.
+                  This is an early release. Sample businesses, reviews, and
+                  ratings are fictional. Hosts manage their own spaces and
+                  availability; providers are not verified, and no payment is
+                  collected.
                 </p>
               </div>
             </div>
@@ -1423,10 +1453,10 @@ function App() {
                 cannot see those details.
               </p>
               <p>
-                This early release does not collect payments or send appointment
-                emails. Signing out removes your account information from the
-                page. Existing browser demo data is kept separate and is never
-                uploaded automatically.
+                This early release does not collect payments. Booking contact
+                details can be used for appointment updates. Signing out removes
+                your account information from the page. Existing browser demo
+                data is kept separate and is never uploaded automatically.
               </p>
               <p>
                 To request removal of account data, contact the site owner.

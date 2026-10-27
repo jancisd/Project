@@ -1,6 +1,7 @@
 import type { Factor } from '@supabase/supabase-js';
 import { backendError, supabase } from './backend';
 import { getSignInErrorMessage } from './auth-errors';
+import { getAuthRedirectUrl } from './platform';
 
 export const MIN_PASSWORD_LENGTH = 8;
 
@@ -184,9 +185,7 @@ function requireNewPassword(password: string) {
 }
 
 function redirectUrl(recovery = false): string {
-  const url = new URL('/', window.location.origin);
-  if (recovery) url.searchParams.set('account', 'recovery');
-  return url.href;
+  return getAuthRedirectUrl(recovery);
 }
 
 export async function logInWithPassword(

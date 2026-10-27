@@ -245,6 +245,12 @@ async function mockAuthenticator(
         state.saved = [...new Set([...state.saved, String(body?.listing_id)])];
       return route.fulfill({ status: 204 });
     }
+    if (path === '/rest/v1/rpc/available_booking_slots')
+      return reply(
+        Array.from({ length: 9 }, (_, index) => ({
+          booking_time: `${String(index + 9).padStart(2, '0')}:00:00`,
+        })),
+      );
     if (path === '/rest/v1/rpc/listing_availability') return reply([]);
     return failure('unexpected_mock_route');
   });

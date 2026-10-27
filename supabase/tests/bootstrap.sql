@@ -1,8 +1,9 @@
 -- Only for the isolated PostgreSQL test container, never a hosted Supabase DB.
 create role anon nologin;
 create role authenticated nologin;
+create role service_role nologin;
 create schema auth;
-create table auth.users(id uuid primary key);
+create table auth.users(id uuid primary key, email text);
 create table auth.mfa_factors (
   id uuid primary key,
   user_id uuid not null references auth.users(id) on delete cascade,

@@ -201,6 +201,46 @@ async function mockDatabase(page: Page, signedIn = false) {
         );
       return route.fulfill({ status: 204 });
     }
+    if (path === '/rest/v1/rpc/available_booking_slots') {
+      if (state.availabilityGate) await state.availabilityGate;
+      if (state.availabilityFailure) return failure();
+      const listing = cloudListings.find(
+        (item) => item.id === body?.p_listing_id,
+      );
+      const service = listing?.services.find(
+        (item) => item.id === body?.p_service_id,
+      );
+      const duration = service?.duration ?? 60;
+      const occupied = [
+        ...state.busy,
+        ...state.bookings.filter(
+          (booking) =>
+            booking.listing_id === body?.p_listing_id &&
+            booking.booking_date === body?.p_date &&
+            booking.status === 'confirmed',
+        ),
+      ];
+      return reply(
+        Array.from({ length: 9 }, (_, index) => 9 + index)
+          .filter(
+            (hour) =>
+              hour * 60 + duration <= 18 * 60 &&
+              !occupied.some((slot) => {
+                const [hours, minutes] = slot.booking_time
+                  .split(':')
+                  .map(Number);
+                const start = hours * 60 + minutes;
+                return (
+                  hour * 60 < start + slot.duration &&
+                  hour * 60 + duration > start
+                );
+              }),
+          )
+          .map((hour) => ({
+            booking_time: `${String(hour).padStart(2, '0')}:00:00`,
+          })),
+      );
+    }
     if (path === '/rest/v1/rpc/listing_availability') {
       if (state.availabilityGate) await state.availabilityGate;
       if (state.availabilityFailure) return failure();
@@ -609,7 +649,7 @@ test('availability loads before booking, fails closed, and respects occupied ser
   const dialog = await openBooking(page);
   await expect(
     dialog.getByRole('button', { name: '9:00 AM', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await expect(
     dialog.getByRole('button', { name: 'Book my appointment' }),
   ).toBeDisabled();
@@ -620,16 +660,16 @@ test('availability loads before booking, fails closed, and respects occupied ser
   ).toBeVisible();
   await expect(
     dialog.getByRole('button', { name: '9:00 AM', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   db.availabilityFailure = false;
   db.busy = [{ booking_time: '09:00:00', duration: 90 }];
   await dialog.getByRole('button', { name: /Try again|Retry/i }).click();
   await expect(
     dialog.getByRole('button', { name: '9:00 AM', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await expect(
     dialog.getByRole('button', { name: '10:00 AM', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await expect(
     dialog.getByRole('button', { name: '11:00 AM', exact: true }),
   ).toBeEnabled();
